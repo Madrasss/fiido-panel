@@ -376,32 +376,41 @@
       const gatt = await device.gatt.connect();
       connectedAt = performance.now();
       log('ev','KROK 1: GATT połączony');
-      // ── ZWIAD: pełna mapa usług zanim czegokolwiek dotkniemy ──
+      // ── ZWIAD + autodetekcja w jednej odpornej pętli ──
+      activeSet = null; let svc = null;
       try{
         const all = await gatt.getPrimaryServices();
         log('ev','KROK 2: usługi ('+all.length+'):');
         for(const s of all){
-          let line = '  SVC '+s.uuid;
+          const uuid = (s && s.uuid) ? String(s.uuid).toLowerCase() : '(brak uuid)';
+          let line = '  SVC '+uuid;
           try{
             const chars = await s.getCharacteristics();
             for(const c of chars){
-              const pr=c.properties, fl=[];
+              const pr=c.properties||{}, fl=[];
               if(pr.read)fl.push('R'); if(pr.write)fl.push('W');
               if(pr.writeWithoutResponse)fl.push('WNR');
               if(pr.notify)fl.push('N'); if(pr.indicate)fl.push('I');
-              line += '\n    CHR '+c.uuid+' ['+fl.join(',')+']';
+              line += '\n    CHR '+((c&&c.uuid)?c.uuid:'(brak)')+' ['+fl.join(',')+']';
             }
-          }catch(e){ line += ' (chars: '+e.message+')'; }
+          }catch(e){ line += '\n    (charakterystyki: '+(e&&e.message||e)+')'; }
           log('rx', line);
+          // dopasowanie do znanego zestawu
+          if(!activeSet){
+            const hit = SETS.find(set => set.svc.toLowerCase() === uuid);
+            if(hit){ activeSet = hit; svc = s; }
+          }
         }
-      }catch(e){ log('er','KROK 2: enumeracja nieudana: '+e.message); }
-      // Autodetekcja: pierwszy zestaw, którego usługa istnieje na urządzeniu
-      activeSet = null; let svc = null;
-      for(const s of SETS){
-        try{ svc = await gatt.getPrimaryService(s.svc); activeSet = s; break; }
-        catch(_){}
+      }catch(e){ log('er','KROK 2: enumeracja nieudana: '+(e&&e.message||e)); }
+
+      if(!activeSet){
+        // awaryjnie: spróbuj pobrać usługi po znanych UUID wprost
+        for(const set of SETS){
+          try{ svc = await gatt.getPrimaryService(set.svc); activeSet = set; break; }
+          catch(_){}
+        }
       }
-      if(!activeSet){ log('er','KROK 3: żadna znana usługa (FFE0/FEA0) nie istnieje'); msg('Nieznane urządzenie'); await disconnect(true); return; }
+      if(!activeSet){ log('er','KROK 3: brak znanej usługi (FFE0/FEA0)'); msg('Nieznane urządzenie — patrz log'); await disconnect(true); return; }
       log('ev','KROK 3: usługa '+activeSet.name);
       const rx   = await svc.getCharacteristic(activeSet.rx);
       txChar     = await svc.getCharacteristic(activeSet.tx);
