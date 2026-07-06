@@ -30,12 +30,38 @@
   #blename{color:var(--viz)}
   .status .off{color:var(--line)}
 
-  /* prędkość */
-  .speed{display:flex;flex-direction:column;align-items:center;padding:6px 0 2px}
-  #spd{font-weight:600;font-size:clamp(80px,30vw,150px);line-height:.95;
-    letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--dim);transition:color .4s}
+  /* prędkość — dominanta ekranu */
+  .speed{display:flex;flex-direction:column;align-items:center;padding:10px 0 4px}
+  #spd{font-weight:600;font-size:clamp(110px,42vw,220px);line-height:.9;
+    letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--dim);transition:color .4s}
   #spd.on{color:var(--viz)}
-  .unit{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.35em;color:var(--dim)}
+  .unit{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.4em;color:var(--dim)}
+
+  /* trzy parametry jazdy */
+  .ride{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:4px}
+  .rcell{background:var(--panel);padding:12px 10px 11px;text-align:center}
+  .rcell>div:first-child{font-size:38px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .rcell .rl{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;
+    color:var(--dim);text-transform:uppercase;margin-top:3px}
+  .rcell .bar{margin-top:8px}
+
+  /* dolny rząd: światło + koło */
+  .botrow{display:flex;gap:10px;margin-top:4px}
+  .big-tgl{flex:1;font-size:17px;padding:20px 0}
+  .cog{flex:0 0 64px;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    color:var(--dim);font-size:26px;cursor:pointer;transition:transform .08s, color .3s}
+  .cog:active{transform:scale(.95)} .cog.open{color:var(--viz);border-color:var(--viz-dim)}
+
+  /* schowek serwisowy */
+  .drawer{display:none;flex-direction:column;gap:10px;margin-top:4px;
+    animation:slidein .2s ease}
+  .drawer.open{display:flex}
+  @keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .dsect{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+    color:var(--dim);text-transform:uppercase;margin:2px 2px -4px}
+  .warn-note{font-family:'IBM Plex Mono',monospace;font-size:10px;line-height:1.4;
+    color:var(--warn);padding:0 2px;min-height:0}
 
   /* bateria */
   .batt{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 16px}
@@ -109,59 +135,72 @@
   <span id="wake" class="off">EKRAN ⏻</span>
 </div>
 
+<!-- ── EKRAN JAZDY ── -->
 <div class="speed">
   <div id="spd">—</div>
   <div class="unit">km / h</div>
 </div>
 
-<div class="batt">
-  <div class="row">
-    <span class="soc"><span id="soc">—</span><small> %</small></span>
-    <span class="det"><span id="volt">—</span> V · <span id="amp">—</span> A · <span id="watt">—</span> W</span>
-  </div>
-  <div class="bar"><i id="socbar"></i></div>
+<div class="ride">
+  <div class="rcell"><div id="soc">—</div><div class="rl">% baterii</div>
+    <div class="bar"><i id="socbar"></i></div></div>
+  <div class="rcell"><div id="trip">—</div><div class="rl">km trip</div></div>
+  <div class="rcell"><div id="watt">—</div><div class="rl">W mocy</div></div>
 </div>
 
-<div class="grid">
-  <div class="cell"><div class="lbl">Trip</div><div class="val"><span id="trip">—</span><small>km</small></div></div>
-  <div class="cell"><div class="lbl">Łącznie</div><div class="val"><span id="total">—</span><small>km</small></div></div>
-  <div class="cell"><div class="lbl">Moment korby</div><div class="val"><span id="torq">—</span><small>Nm</small></div></div>
-  <div class="cell"><div class="lbl">Kadencja</div><div class="val"><span id="rpm">—</span><small>rpm</small></div></div>
-  <div class="cell"><div class="lbl">Temp. silnika</div><div class="val"><span id="mtemp">—</span><small>°C</small></div></div>
-  <div class="cell"><div class="lbl">Energia trip</div><div class="val"><span id="twh">—</span><small>Wh</small></div></div>
-</div>
-
-<div class="sect">Wspomaganie</div>
 <div class="gears" id="gears"></div>
 
-<div class="sect">Sterowanie</div>
-<div class="toggles">
-  <button class="tgl" id="tglPower">Zasilanie</button>
-  <button class="tgl" id="tglLight">Światło</button>
-  <button class="tgl" id="tglHorn">Klakson</button>
-</div>
-
-<div class="conn">
-  <button class="big" id="btnConn">Połącz z rowerem</button>
-  <button class="big" id="btnScanAll">Skanuj<br>wszystko</button>
+<div class="botrow">
+  <button class="tgl big-tgl" id="tglLight">Światło</button>
+  <button class="cog" id="cogBtn" aria-label="Serwis">⚙</button>
 </div>
 <div id="msg"></div>
 
-<details>
-  <summary>Diagnostyka / surowe ramki</summary>
-  <div class="toggles" style="margin:8px 0">
-    <button class="tgl" id="tPoll05">POLL 05<br>STATS</button>
-    <button class="tgl" id="tPoll7B">POLL 7B<br>BATT</button>
-    <button class="tgl" id="tPoll60">POLL 60<br>METER</button>
+<!-- ── SCHOWEK SERWISOWY ── -->
+<div id="drawer" class="drawer">
+  <div class="dsect">Parametry</div>
+  <div class="grid">
+    <div class="cell"><div class="lbl">Napięcie</div><div class="val"><span id="volt">—</span><small>V</small></div></div>
+    <div class="cell"><div class="lbl">Prąd</div><div class="val"><span id="amp">—</span><small>A</small></div></div>
+    <div class="cell"><div class="lbl">Łącznie</div><div class="val"><span id="total">—</span><small>km</small></div></div>
+    <div class="cell"><div class="lbl">Moment korby</div><div class="val"><span id="torq">—</span><small>Nm</small></div></div>
+    <div class="cell"><div class="lbl">Kadencja</div><div class="val"><span id="rpm">—</span><small>rpm</small></div></div>
+    <div class="cell"><div class="lbl">Temp. silnika</div><div class="val"><span id="mtemp">—</span><small>°C</small></div></div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:8px">
-    <input id="hexIn" placeholder="własna ramka hex, np. 46 64 55 35 05"
-      style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;
-      color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:10px">
-    <button class="tgl" id="hexSend" style="flex:0 0 90px">Wyślij<br>+CRC</button>
+
+  <div class="dsect">Sterowanie</div>
+  <div class="toggles">
+    <button class="tgl" id="tglPower">Zasilanie</button>
+    <button class="tgl" id="tglLimit">Limit<br>25</button>
+    <button class="tgl" id="tglHorn">Klakson<br>(test)</button>
   </div>
-  <div id="log"></div>
-</details>
+  <div class="toggles" style="margin-top:8px">
+    <button class="tgl" id="tglLimitDefault">Domyślnie<br>bez limitu</button>
+  </div>
+  <div class="warn-note" id="limitWarn"></div>
+
+  <div class="conn">
+    <button class="big" id="btnConn">Połącz z rowerem</button>
+    <button class="big" id="btnScanAll">Skanuj<br>wszystko</button>
+  </div>
+
+  <details>
+    <summary>Diagnostyka / surowe ramki</summary>
+    <div class="toggles" style="margin:8px 0">
+      <button class="tgl" id="tPoll05">POLL 05<br>STATS</button>
+      <button class="tgl" id="tPoll7B">POLL 7B<br>BATT</button>
+      <button class="tgl" id="tPoll60">POLL 60<br>METER</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="hexIn" placeholder="własna ramka hex, np. 46 64 55 35 05"
+        style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+        color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:10px">
+      <button class="tgl" id="hexSend" style="flex:0 0 90px">Wyślij<br>+CRC</button>
+    </div>
+    <div id="log"></div>
+  </details>
+</div>
+
 
 <script>
 (() => {
@@ -217,7 +256,9 @@
   let device=null, txChar=null, rxBuf=new Uint8Array(0);
   let pollTimer=null, tick=0, wakeLock=null, connectedAt=0;
   let motorOn=false, lightOn=false, hornOn=true, gear=-1;
-  let a27=null, a38=null;           // cache bajtów flag do RMW
+  let a27=null, a38=null, a2C=null;  // cache bajtów flag do RMW
+  let limitOff=false;                 // true = limit prędkości zdjęty (bit5 a27 = 0)
+  let limitPersist=false;             // true = limit NIE wraca po włączeniu (bit6 a2C = 0)
   let socLow=false;
 
   function log(cls, txt){
@@ -248,10 +289,18 @@
     $('tglPower').classList.toggle('on', motorOn);
     $('tglLight').classList.toggle('on', lightOn);
     $('tglHorn').classList.toggle('on', hornOn);
+    $('tglLimit').classList.toggle('on', limitOff);
+    $('tglLimit').innerHTML = limitOff ? 'Bez<br>limitu' : 'Limit<br>25';
+    $('tglLimitDefault').classList.toggle('on', limitPersist);
     const dis = !txChar;
     $('tglPower').disabled = dis || a27===null;
     $('tglLight').disabled = dis || a27===null || !motorOn;
     $('tglHorn').disabled  = dis || a38===null;
+    $('tglLimit').disabled = dis || a27===null || a2C===null || !motorOn;
+    $('tglLimitDefault').disabled = dis || a2C===null || !motorOn;
+    $('limitWarn').textContent = limitPersist
+      ? '⚠ Limit zniesiony na stałe — rower poza zakresem pedelec (25 km/h). Sprawdź przepisy dot. jazdy po drogach publicznych.'
+      : '';
     buildGears();
   }
 
@@ -295,10 +344,14 @@
       const r25=p[32], hi=(r25>>4)&15, lo=r25&15, mgMode=Math.max(hi,lo);
       const candidate = Math.max(gear, (mgMode>=1&&mgMode<=9)?mgMode:0);
       if(candidate > maxGearSeen){ maxGearSeen = candidate; log('ev','Wykryto biegi: 0..'+maxGearSeen); }
-      a27 = p[34]; a38 = p[51];
+      a27 = p[34]; a38 = p[51]; a2C = p[39];
       motorOn = (a27 & 0x80)!==0;
       lightOn = motorOn && (a27 & 0x08)!==0;
       hornOn  = (a38 & 0x0C)===0;   // bity 3:2 == 00 → słyszalny
+      limitOff = (a27 & 0x20)===0;  // bit5 = 0 → limit zdjęty
+      // bit6 rejestru 0x2C: 1 = limit resetuje się przy włączeniu roweru.
+      // "Domyślnie bez limitu" = ten bit ma być 0 (limit NIE wraca).
+      limitPersist = (a2C & 0x40)===0;
       renderControls();
     } else if(addr===0x7B && p.length===13){          // BATTERY
       const v=u16(p,4)/10, i=u16(p,9)/10;
@@ -308,7 +361,6 @@
     } else if(addr===0xC8 && p.length===12){          // ENERGY
       $('torq').textContent=(u16(p,0)/10).toFixed(1);
       $('rpm').textContent=u16(p,2);
-      $('twh').textContent=(u16(p,4)/10).toFixed(0);
     } else if(addr===0x96 && p.length===12){          // MOTOR
       let t=u16(p,7); if(t>32767) t-=65536;
       $('mtemp').textContent=t;
@@ -351,6 +403,41 @@
     if(a38===null) return;
     let b = a38 & ~0x0C; if(hornOn) b |= 0x04;   // 00=słyszalny, 01=wyciszony
     await tx(writeFrame(0x38, [b & 0xFF]), 'HORN');
+  };
+  // LIMIT: sekwencja jak w set_speed_limit() komponentu.
+  // Zdjęcie: (1) 0x2C bit7=0, (2) po opóźnieniu 0x3C=100 i 0x27 bit5=0
+  //   — opóźnienie konieczne, bo BMS po zdjęciu flagi PAS sam wpisuje 0x3C=25.
+  // Przywrócenie: (1) 0x2C bit7=1, (2) od razu 0x3C=25 i 0x27 bit5=1.
+  $('tglLimit').onclick = async () => {
+    if(a27===null || a2C===null || !motorOn) return;
+    const removing = !limitOff;               // cel: zdjąć limit?
+    const val   = removing ? 100 : 25;
+    let b2C = removing ? (a2C & ~0x80) : (a2C | 0x80);
+    let b27 = removing ? (a27 & ~0x20) : (a27 | 0x20);
+    await tx(writeFrame(0x2C, [b2C & 0xFF]), 'LIMIT faza1 (0x2C bit7='+(removing?0:1)+')');
+    a2C = b2C;
+    const phase2 = async () => {
+      await tx(writeFrame(0x3C, [val]), 'LIMIT faza2 (0x3C='+val+')');
+      await tx(writeFrame(0x27, [b27 & 0xFF]), 'LIMIT faza2 (0x27 bit5='+(removing?0:1)+')');
+      a27 = b27;
+    };
+    if(removing) setTimeout(phase2, 200); else await phase2();
+  };
+  // "Domyślnie bez limitu": bit6 rejestru 0x2C.
+  // 0 = limit NIE wraca po włączeniu roweru (trwałe zniesienie).
+  // 1 = limit resetuje się przy każdym cyklu zasilania (fabryczne).
+  $('tglLimitDefault').onclick = async () => {
+    if(a2C===null || !motorOn) return;
+    const persist = !limitPersist;                 // cel: ma NIE wracać?
+    let b2C = persist ? (a2C & ~0x40) : (a2C | 0x40);
+    await tx(writeFrame(0x2C, [b2C & 0xFF]), 'LIMIT DEFAULT (0x2C bit6='+(persist?0:1)+')');
+    a2C = b2C;
+  };
+  // koło zębate — schowek serwisowy
+  $('cogBtn').onclick = () => {
+    const d=$('drawer'); const open=d.classList.toggle('open');
+    $('cogBtn').classList.toggle('open', open);
+    if(open) d.scrollIntoView({behavior:'smooth', block:'start'});
   };
 
   // ── pętla odpytywania ──
