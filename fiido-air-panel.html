@@ -179,7 +179,7 @@
       svc:'c3e6fea0-e966-1000-8000-be99c223df6a',
       rx :'c3e6fea2-e966-1000-8000-be99c223df6a',
       tx :'c3e6fea1-e966-1000-8000-be99c223df6a',
-      autoPoll:false },
+      autoPoll:true },
   ];
   let activeSet = null;
 
@@ -191,8 +191,10 @@
     {addr:0xC8, len:12, name:'ENERGY',  every:3},
     {addr:0x96, len:12, name:'MOTOR',   every:9},
   ];
-  const GEARS_3 = ['OFF','eco','sport','turbo'];
-  const GEARS_5 = ['OFF','eco','normal','sport','turbo','turbo+'];
+  // Air ma jeden przycisk cykliczny i brak wyświetlacza poziomów, a źródła
+  // podają różne liczby biegów (2/3/5). Nie zakładamy nic — uczymy się z roweru:
+  // maxGearSeen to najwyższy numer biegu, jaki BMS kiedykolwiek zgłosił.
+  let maxGearSeen = 1;   // minimum: OFF + bieg 1
 
   const crc = (b, n) => { let c=0; for(let i=0;i<n;i++) c^=b[i]; return c; };
   const u16 = (p,o) => (p[o]<<8)|p[o+1];
@@ -214,7 +216,7 @@
   // ── stan ──
   let device=null, txChar=null, rxBuf=new Uint8Array(0);
   let pollTimer=null, tick=0, wakeLock=null, connectedAt=0;
-  let motorOn=false, lightOn=false, hornOn=true, gear=-1, gearCount=3;
+  let motorOn=false, lightOn=false, hornOn=true, gear=-1;
   let a27=null, a38=null;           // cache bajtów flag do RMW
   let socLow=false;
 
@@ -230,14 +232,15 @@
   // ── UI ──
   function buildGears(){
     const box=$('gears'); box.innerHTML='';
-    const names = gearCount===5 ? GEARS_5 : GEARS_3;
-    names.forEach((n,i)=>{
+    // Biegi 0..maxGearSeen. 0 = OFF (brak wspomagania), reszta numerowana.
+    for(let i=0; i<=maxGearSeen; i++){
       const b=document.createElement('button');
-      b.className='gear'+(i===gear?' cur':''); b.textContent=n;
+      b.className='gear'+(i===gear?' cur':'');
+      b.textContent = i===0 ? 'OFF' : String(i);
       b.disabled = !txChar || !motorOn;
       b.onclick = () => setGear(i);
       box.appendChild(b);
-    });
+    }
   }
   function renderControls(){
     $('motorstat').textContent = 'ZASILANIE ' + (motorOn?'ON':'OFF');
@@ -285,10 +288,13 @@
       $('spd').textContent = kmh.toFixed(1);
       $('spd').classList.toggle('on', kmh>0.5);
       setSoc(p[31]);
-      // biegi
-      const r25=p[32], hi=(r25>>4)&15, lo=r25&15, mg=Math.max(hi,lo);
-      if(mg===3||mg===5) gearCount=mg;
+      // biegi: uczymy się liczby z roweru zamiast zakładać.
       gear = p[33];
+      // Bajt 0x25 (tryb) próbujemy odczytać, ale nie ufamy mu jako jedynemu
+      // źródłu — najwyższy realny bieg bierzemy z obserwacji bajtu 0x26.
+      const r25=p[32], hi=(r25>>4)&15, lo=r25&15, mgMode=Math.max(hi,lo);
+      const candidate = Math.max(gear, (mgMode>=1&&mgMode<=9)?mgMode:0);
+      if(candidate > maxGearSeen){ maxGearSeen = candidate; log('ev','Wykryto biegi: 0..'+maxGearSeen); }
       a27 = p[34]; a38 = p[51];
       motorOn = (a27 & 0x80)!==0;
       lightOn = motorOn && (a27 & 0x08)!==0;
