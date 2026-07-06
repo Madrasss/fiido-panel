@@ -190,14 +190,14 @@
 
   // ── stan ──
   let device=null, txChar=null, rxBuf=new Uint8Array(0);
-  let pollTimer=null, tick=0, wakeLock=null;
+  let pollTimer=null, tick=0, wakeLock=null, connectedAt=0;
   let motorOn=false, lightOn=false, hornOn=true, gear=-1, gearCount=3;
   let a27=null, a38=null;           // cache bajtów flag do RMW
   let socLow=false;
 
   function log(cls, txt){
     const el=$('log'); const d=new Date();
-    const t=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+    const t=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}.${String(d.getMilliseconds()).padStart(3,'0')}`;
     el.innerHTML += `<span class="${cls}">[${t}] ${txt}</span>\n`;
     while(el.childNodes.length>120) el.removeChild(el.firstChild);
     el.scrollTop=el.scrollHeight;
@@ -349,23 +349,54 @@
       device.addEventListener('gattserverdisconnected', onDisconnected);
       msg('Łączenie…');
       const gatt = await device.gatt.connect();
+      connectedAt = performance.now();
+      log('ev','KROK 1: GATT połączony');
+      // ── ZWIAD: pełna mapa usług zanim czegokolwiek dotkniemy ──
+      try{
+        const all = await gatt.getPrimaryServices();
+        log('ev','KROK 2: usługi ('+all.length+'):');
+        for(const s of all){
+          let line = '  SVC '+s.uuid;
+          try{
+            const chars = await s.getCharacteristics();
+            for(const c of chars){
+              const pr=c.properties, fl=[];
+              if(pr.read)fl.push('R'); if(pr.write)fl.push('W');
+              if(pr.writeWithoutResponse)fl.push('WNR');
+              if(pr.notify)fl.push('N'); if(pr.indicate)fl.push('I');
+              line += '\n    CHR '+c.uuid+' ['+fl.join(',')+']';
+            }
+          }catch(e){ line += ' (chars: '+e.message+')'; }
+          log('rx', line);
+        }
+      }catch(e){ log('er','KROK 2: enumeracja nieudana: '+e.message); }
       const svc  = await gatt.getPrimaryService(SVC);
+      log('ev','KROK 3: usługa FFE0 znaleziona');
       const rx   = await svc.getCharacteristic(CH_RX);
       txChar     = await svc.getCharacteristic(CH_TX);
+      log('ev','KROK 4: FFE1/FFE2 OK, włączam notyfikacje…');
       await rx.startNotifications();
       rx.addEventListener('characteristicvaluechanged', onNotify);
+      log('ev','KROK 5: notyfikacje włączone');
       $('blename').textContent = device.name || 'Połączono';
       $('blename').classList.remove('off');
       $('btnConn').textContent='Rozłącz'; $('btnConn').classList.add('connected');
-      msg(''); log('ev','Połączono, usługa FFE0 OK — start pollingu');
-      startPolling(); acquireWake(); renderControls();
+      msg('');
+      log('ev','KROK 6: start pollingu za 2 s…');
+      setTimeout(()=>{ if(device){ startPolling(); log('ev','KROK 7: polling wystartował'); } }, 2000);
+      acquireWake(); renderControls();
     }catch(e){
       log('er', e.message); 
       msg(e.name==='NotFoundError' ? 'Nie wybrano urządzenia' : 'Błąd: '+e.message);
       await disconnect(true);
     }
   }
-  function onDisconnected(){ log('er','Rozłączono przez urządzenie'); disconnect(true); }
+  function onDisconnected(){
+    const dt = connectedAt ? Math.round(performance.now()-connectedAt) : -1;
+    log('er','ROZŁĄCZONO przez urządzenie po '+dt+' ms od połączenia');
+    msg('Rozłączono po '+dt+' ms — zrób zrzut logu diagnostycznego');
+    disconnect(true);
+  }
   async function disconnect(silent){
     stopPolling();
     try{ if(device && device.gatt.connected) device.gatt.disconnect(); }catch(_){}
