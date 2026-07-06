@@ -149,6 +149,17 @@
 
 <details>
   <summary>Diagnostyka / surowe ramki</summary>
+  <div class="toggles" style="margin:8px 0">
+    <button class="tgl" id="tPoll05">POLL 05<br>STATS</button>
+    <button class="tgl" id="tPoll7B">POLL 7B<br>BATT</button>
+    <button class="tgl" id="tPoll60">POLL 60<br>METER</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:8px">
+    <input id="hexIn" placeholder="własna ramka hex, np. 46 64 55 35 05"
+      style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+      color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:10px">
+    <button class="tgl" id="hexSend" style="flex:0 0 90px">Wyślij<br>+CRC</button>
+  </div>
   <div id="log"></div>
 </details>
 
@@ -156,9 +167,21 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const SVC  = '00010203-0405-0607-0809-0a0b0c0dffe0';
-  const CH_RX = '00010203-0405-0607-0809-0a0b0c0dffe1'; // NOTIFY
-  const CH_TX = '00010203-0405-0607-0809-0a0b0c0dffe2'; // WRITE
+  // Zestawy usług: C11/M1 (FFE0) oraz Air nowej generacji (C3E6FEA0).
+  // Uwaga na odwróconą rolę sufiksów: w Air FEA1 = zapis, FEA2 = notyfikacje.
+  const SETS = [
+    { name:'FFE0 (C11/M1)',
+      svc:'00010203-0405-0607-0809-0a0b0c0dffe0',
+      rx :'00010203-0405-0607-0809-0a0b0c0dffe1',
+      tx :'00010203-0405-0607-0809-0a0b0c0dffe2',
+      autoPoll:true },
+    { name:'FEA0 (Air)',
+      svc:'c3e6fea0-e966-1000-8000-be99c223df6a',
+      rx :'c3e6fea2-e966-1000-8000-be99c223df6a',
+      tx :'c3e6fea1-e966-1000-8000-be99c223df6a',
+      autoPoll:false },
+  ];
+  let activeSet = null;
 
   // ── protokół Fiido BMS (za esphome-fiido-bms, zweryfikowany na C11 Pro / M1 Pro) ──
   const SIG0=0x46, SIG1=0x64, T_POLL=0x55, T_NOTIFY=0xAA, T_WRITE=0xAA;
@@ -232,6 +255,7 @@
   // ── parsowanie ──
   function onNotify(ev){
     const chunk = new Uint8Array(ev.target.value.buffer);
+    log('rx','CHUNK ('+chunk.length+'B): '+hex(chunk));
     const merged = new Uint8Array(rxBuf.length + chunk.length);
     merged.set(rxBuf); merged.set(chunk, rxBuf.length);
     rxBuf = merged;
@@ -341,9 +365,10 @@
     if(!navigator.bluetooth){ msg('Brak Web Bluetooth — otwórz w przeglądarce Bluefy'); return; }
     try{
       msg('Skanowanie…');
+      const allSvcs = SETS.map(s=>s.svc);
       const opts = scanAll
-        ? { acceptAllDevices:true, optionalServices:[SVC] }
-        : { filters:[{namePrefix:'Fiido'}], optionalServices:[SVC] };
+        ? { acceptAllDevices:true, optionalServices:allSvcs }
+        : { filters:[{namePrefix:'Fiido'}], optionalServices:allSvcs };
       device = await navigator.bluetooth.requestDevice(opts);
       log('ev','Wybrano: '+(device.name||'(bez nazwy)'));
       device.addEventListener('gattserverdisconnected', onDisconnected);
@@ -370,20 +395,32 @@
           log('rx', line);
         }
       }catch(e){ log('er','KROK 2: enumeracja nieudana: '+e.message); }
-      const svc  = await gatt.getPrimaryService(SVC);
-      log('ev','KROK 3: usługa FFE0 znaleziona');
-      const rx   = await svc.getCharacteristic(CH_RX);
-      txChar     = await svc.getCharacteristic(CH_TX);
-      log('ev','KROK 4: FFE1/FFE2 OK, włączam notyfikacje…');
+      // Autodetekcja: pierwszy zestaw, którego usługa istnieje na urządzeniu
+      activeSet = null; let svc = null;
+      for(const s of SETS){
+        try{ svc = await gatt.getPrimaryService(s.svc); activeSet = s; break; }
+        catch(_){}
+      }
+      if(!activeSet){ log('er','KROK 3: żadna znana usługa (FFE0/FEA0) nie istnieje'); msg('Nieznane urządzenie'); await disconnect(true); return; }
+      log('ev','KROK 3: usługa '+activeSet.name);
+      const rx   = await svc.getCharacteristic(activeSet.rx);
+      txChar     = await svc.getCharacteristic(activeSet.tx);
+      log('ev','KROK 4: rx/tx OK, włączam notyfikacje…');
       await rx.startNotifications();
       rx.addEventListener('characteristicvaluechanged', onNotify);
       log('ev','KROK 5: notyfikacje włączone');
-      $('blename').textContent = device.name || 'Połączono';
+      $('blename').textContent = (device.name||'Połączono')+' · '+activeSet.name;
       $('blename').classList.remove('off');
       $('btnConn').textContent='Rozłącz'; $('btnConn').classList.add('connected');
       msg('');
-      log('ev','KROK 6: start pollingu za 2 s…');
-      setTimeout(()=>{ if(device){ startPolling(); log('ev','KROK 7: polling wystartował'); } }, 2000);
+      if(activeSet.autoPoll){
+        log('ev','KROK 6: start pollingu za 2 s…');
+        setTimeout(()=>{ if(device){ startPolling(); log('ev','KROK 7: polling wystartował'); } }, 2000);
+      } else {
+        log('ev','KROK 6: TRYB NASŁUCHU — bez pollingu; użyj przycisków testowych');
+        msg('Tryb nasłuchu — testuj ramki z panelu Diagnostyka');
+        document.querySelector('details').open = true;
+      }
       acquireWake(); renderControls();
     }catch(e){
       log('er', e.message); 
@@ -424,6 +461,21 @@
 
   $('btnConn').onclick   = () => connect(false);
   $('btnScanAll').onclick= () => connect(true);
+
+  // ── panel testowy ──
+  $('tPoll05').onclick = () => tx(pollFrame(0x05,53), 'TEST POLL STATS');
+  $('tPoll7B').onclick = () => tx(pollFrame(0x7B,13), 'TEST POLL BATTERY');
+  $('tPoll60').onclick = () => tx(pollFrame(0x60,13), 'TEST POLL METER');
+  $('hexSend').onclick = () => {
+    const raw = $('hexIn').value.trim().replace(/[^0-9a-fA-F ]/g,'');
+    if(!raw){ msg('Wpisz bajty hex'); return; }
+    const bytes = raw.split(/\s+/).map(x=>parseInt(x,16)).filter(x=>!isNaN(x)&&x>=0&&x<=255);
+    if(!bytes.length){ msg('Niepoprawny hex'); return; }
+    const f = new Uint8Array(bytes.length+1);
+    f.set(bytes); f[bytes.length] = crc(f, bytes.length);
+    tx(f, 'TEST CUSTOM');
+  };
+
   buildGears(); renderControls();
 })();
 </script>
