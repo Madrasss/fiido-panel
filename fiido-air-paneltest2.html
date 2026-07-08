@@ -202,9 +202,16 @@
   <div class="dsect">Nagrywanie diagnostyczne</div>
   <div class="toggles">
     <button class="tgl" id="btnRec">● REC</button>
-    <button class="tgl" id="btnExport">Eksport<br>do pliku</button>
+    <button class="tgl" id="btnExport">Pokaż log<br>do skopiowania</button>
   </div>
   <div class="rec-info">Złapane ramki: <span id="recCnt">0</span></div>
+  <div id="exportWrap" style="display:none">
+    <textarea id="exportBox" readonly
+      style="width:100%;height:160px;background:var(--bg);border:1px solid var(--line);
+      border-radius:10px;color:var(--ink);font-family:'IBM Plex Mono',monospace;
+      font-size:10px;padding:10px;margin-top:8px;white-space:pre;overflow:auto"></textarea>
+    <button class="tgl" id="exportCopy" style="width:100%;margin-top:6px">Kopiuj do schowka</button>
+  </div>
 
   <details>
     <summary>Diagnostyka / surowe ramki</summary>
@@ -490,18 +497,31 @@
       log('ev','REC stop — złapano '+recCount+' ramek');
     }
   };
-  $('btnExport').onclick = () => {
+  $('btnExport').onclick = async () => {
     if(!recBuf.length){ msg('Brak nagrania — najpierw REC'); return; }
     const txt = recBuf.join('\n')+'\n';
-    const blob = new Blob([txt], {type:'text/plain'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-    a.href=url; a.download='fiido-air-log-'+stamp+'.txt';
-    document.body.appendChild(a); a.click();
-    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-    log('ev','Eksport: '+recCount+' ramek do pliku');
-    msg('Zapisano '+recCount+' ramek do pliku');
+    // Bluefy nie pobiera plików Blob — pokazujemy log w polu do skopiowania.
+    $('exportBox').value = txt;
+    $('exportWrap').style.display = 'block';
+    $('exportBox').scrollIntoView({behavior:'smooth', block:'center'});
+    // próba automatycznego kopiowania do schowka (jeśli przeglądarka pozwoli)
+    try{
+      await navigator.clipboard.writeText(txt);
+      msg('Skopiowano '+recCount+' ramek do schowka');
+    }catch(_){
+      msg('Zaznacz tekst poniżej i skopiuj ręcznie ('+recCount+' ramek)');
+    }
+    log('ev','Eksport: '+recCount+' ramek wyświetlonych');
+  };
+  $('exportCopy').onclick = async () => {
+    $('exportBox').select();
+    try{
+      await navigator.clipboard.writeText($('exportBox').value);
+      msg('Skopiowano do schowka');
+    }catch(_){
+      document.execCommand('copy');   // fallback dla starszych silników
+      msg('Skopiowano (zaznacz i wklej jeśli nie zadziałało)');
+    }
   };
 
   // ── pętla odpytywania ──
