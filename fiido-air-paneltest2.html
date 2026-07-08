@@ -170,9 +170,6 @@
 <div class="grid params">
   <div class="cell"><div class="lbl">Prąd</div><div class="val"><span id="amp">—</span><small>A</small></div></div>
   <div class="cell"><div class="lbl">Łącznie</div><div class="val"><span id="total">—</span><small>km</small></div></div>
-  <div class="cell"><div class="lbl">Moment korby</div><div class="val"><span id="torq">—</span><small>Nm</small></div></div>
-  <div class="cell"><div class="lbl">Kadencja</div><div class="val"><span id="rpm">—</span><small>rpm</small></div></div>
-  <div class="cell"><div class="lbl">Temp. silnika</div><div class="val"><span id="mtemp">—</span><small>°C</small></div></div>
   <div class="cell"><div class="lbl">Napięcie</div><div class="val"><span id="volt2">—</span><small>V</small></div></div>
 </div>
 
@@ -398,17 +395,10 @@
       $('amp').textContent=i.toFixed(1);
       $('watt').textContent=Math.round(v*i);
     }
-    // Ramki silnikowe — długości ŚCIŚLE jak w komponencie (odrzucanie złych
-    // długości jest zamierzone). 0x60 (METER) NIE zawiera momentu/kadencji/
-    // temperatury — to tylko wersje sprzętu, więc nie dotykamy tych pól.
-    else if(addr===0xC8 && p.length===12){            // ENERGY: moment @0, kadencja @2
-      $('torq').textContent=(u16(p,0)/10).toFixed(1);
-      $('rpm').textContent=u16(p,2);
-    }
-    else if(addr===0x96 && p.length===12){            // MOTOR: temperatura @7 (signed)
-      let t=u16(p,7); if(t>32767) t-=65536;
-      $('mtemp').textContent=t;
-    }
+    // Ramki 0xC8/0x96/0x60 zostawiamy odbierane (widoczne w logu diagnostycznym),
+    // ale NIE wpisujemy z nich momentu/kadencji/temperatury: analiza logów C11
+    // wykazała, że te wartości nie są raportowane przez BLE (pola były zerowe/stałe
+    // niezależnie od nacisku na korbę i obrotów koła).
   }
 
   function setSoc(s){
