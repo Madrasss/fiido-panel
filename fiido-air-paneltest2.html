@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d0f">
+<title>Fiido Air · Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d0f; --panel:#14171a; --ink:#f2f5f2; --dim:#8a9196;
+    --line:#23282c; --viz:#d7f24b; --viz-dim:#5f6b22; --warn:#ff8a4a; --err:#ff5a5a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Chakra Petch',-apple-system,system-ui,sans-serif;
+    display:flex; flex-direction:column; gap:10px;
+    padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 12px);
+    user-select:none;-webkit-user-select:none; overflow-y:auto;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace}
+
+  /* pasek statusu */
+  .status{display:flex;justify-content:space-between;align-items:center;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;
+    color:var(--dim);text-transform:uppercase}
+  #blename{color:var(--viz)}
+  .status .off{color:var(--line)}
+
+  /* prędkość — dominanta ekranu */
+  .speed{display:flex;flex-direction:column;align-items:center;padding:6px 0 2px}
+  #spd{font-weight:600;font-size:clamp(90px,34vw,180px);line-height:.9;
+    letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--dim);transition:color .4s}
+  #spd.on{color:var(--viz)}
+  .unit{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.4em;color:var(--dim)}
+
+  /* bateria — pełna szerokość, nad prędkością */
+  .battbar{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px 16px}
+  .batthead{display:flex;align-items:baseline;gap:6px}
+  .batthead>span:first-child{font-size:32px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .batthead small{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;
+    color:var(--dim);text-transform:uppercase}
+  .battdet{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--dim)}
+
+  /* trip + czas jazdy */
+  .ride2{display:grid;grid-template-columns:1fr 1fr;gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:2px}
+  .ride2 .rcell{background:var(--panel);padding:11px 10px 10px;text-align:center}
+  .ride2 .rcell>div:first-child{font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .ride2 .rl{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;
+    color:var(--dim);text-transform:uppercase;margin-top:3px}
+
+  /* parametry na stałe (mniejsze) */
+  .params{margin-top:2px}
+
+  /* dolny rząd: światło + koło */
+  .botrow{display:flex;gap:10px;margin-top:4px}
+  .big-tgl{flex:1;font-size:17px;padding:20px 0}
+  .cog{flex:0 0 64px;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    color:var(--dim);font-size:26px;cursor:pointer;transition:transform .08s, color .3s}
+  .cog:active{transform:scale(.95)} .cog.open{color:var(--viz);border-color:var(--viz-dim)}
+
+  /* schowek serwisowy */
+  .drawer{display:none;flex-direction:column;gap:10px;margin-top:4px;
+    animation:slidein .2s ease}
+  .drawer.open{display:flex}
+  @keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .dsect{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+    color:var(--dim);text-transform:uppercase;margin:2px 2px -4px}
+  .warn-note{font-family:'IBM Plex Mono',monospace;font-size:10px;line-height:1.4;
+    color:var(--warn);padding:0 2px;min-height:0}
+  .rec-info{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--dim);padding:2px}
+  #btnRec.rec{background:var(--err);color:#fff;border-color:var(--err);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+  /* bateria */
+  .batt{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 16px}
+  .batt .row{display:flex;justify-content:space-between;align-items:baseline}
+  .batt .soc{font-size:34px;font-weight:600;font-variant-numeric:tabular-nums}
+  .batt .soc small{font-size:15px;color:var(--dim);font-weight:300}
+  .batt .det{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--dim)}
+  .bar{height:8px;border-radius:4px;background:var(--line);margin-top:9px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0%;background:var(--viz);border-radius:4px;transition:width .6s}
+  .bar i.low{background:var(--warn)} .bar i.crit{background:var(--err)}
+
+  /* metryki */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .cell{background:var(--panel);padding:10px 14px 9px}
+  .lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;
+    color:var(--dim);text-transform:uppercase;margin-bottom:2px}
+  .val{font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+  .val small{font-size:12px;color:var(--dim);font-weight:300;margin-left:2px}
+
+  /* wspomaganie */
+  .sect{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+    color:var(--dim);text-transform:uppercase;margin:2px 2px -4px}
+  .gears{display:flex;gap:8px}
+  .gear{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 0;text-align:center;font-family:'Chakra Petch',sans-serif;font-weight:600;
+    font-size:15px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;
+    transition:all .2s;cursor:pointer}
+  .gear:active{transform:scale(.96)}
+  .gear.cur{background:var(--viz);color:#111;border-color:var(--viz)}
+  .gear:disabled{opacity:.35}
+
+  /* przełączniki */
+  .toggles{display:flex;gap:8px}
+  .tgl{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:13px 0;text-align:center;font-family:'Chakra Petch',sans-serif;font-weight:600;
+    font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;
+    transition:all .2s;cursor:pointer}
+  .tgl:active{transform:scale(.96)}
+  .tgl.on{color:var(--viz);border-color:var(--viz-dim)}
+  .tgl:disabled{opacity:.35}
+
+  /* połączenie */
+  .conn{display:flex;gap:8px}
+  button.big{flex:1;border:none;border-radius:14px;padding:16px 0;cursor:pointer;
+    font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:16px;
+    letter-spacing:.08em;text-transform:uppercase;transition:transform .08s}
+  button.big:active{transform:scale(.97)}
+  #btnConn{background:var(--viz);color:#111}
+  #btnConn.connected{background:var(--panel);color:var(--err);border:1px solid var(--line)}
+  #btnScanAll{flex:.6;background:var(--panel);color:var(--dim);border:1px solid var(--line);font-size:12px}
+
+  #msg{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;
+    color:var(--warn);min-height:15px;letter-spacing:.04em}
+
+  /* log diagnostyczny */
+  details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+  summary{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;
+    color:var(--dim);text-transform:uppercase;cursor:pointer}
+  #log{font-family:'IBM Plex Mono',monospace;font-size:10px;line-height:1.5;color:var(--dim);
+    max-height:180px;overflow-y:auto;margin-top:8px;white-space:pre-wrap;word-break:break-all}
+  #log .tx{color:var(--viz-dim)} #log .rx{color:var(--dim)} #log .ev{color:var(--viz)} #log .er{color:var(--err)}
+  @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+
+<div class="status">
+  <span id="blename" class="off">Rozłączony</span>
+  <span id="motorstat" class="off">ZASILANIE —</span>
+  <span id="wake" class="off">EKRAN ⏻</span>
+</div>
+
+<!-- ── EKRAN JAZDY (kolejność: bateria, tryby, prędkość, trip+czas, parametry) ── -->
+<div class="battbar">
+  <div class="batthead"><span id="soc">—</span><small>% baterii</small>
+    <span class="battdet"><span id="volt">—</span> V · <span id="watt">—</span> W</span></div>
+  <div class="bar"><i id="socbar"></i></div>
+</div>
+
+<div class="gears" id="gears"></div>
+
+<div class="speed">
+  <div id="spd">—</div>
+  <div class="unit">km / h</div>
+</div>
+
+<div class="ride2">
+  <div class="rcell"><div id="trip">—</div><div class="rl">km trip</div></div>
+  <div class="rcell"><div id="rtime">0:00</div><div class="rl">czas jazdy</div></div>
+</div>
+
+<div class="grid params">
+  <div class="cell"><div class="lbl">Prąd</div><div class="val"><span id="amp">—</span><small>A</small></div></div>
+  <div class="cell"><div class="lbl">Łącznie</div><div class="val"><span id="total">—</span><small>km</small></div></div>
+  <div class="cell"><div class="lbl">Moment korby</div><div class="val"><span id="torq">—</span><small>Nm</small></div></div>
+  <div class="cell"><div class="lbl">Kadencja</div><div class="val"><span id="rpm">—</span><small>rpm</small></div></div>
+  <div class="cell"><div class="lbl">Temp. silnika</div><div class="val"><span id="mtemp">—</span><small>°C</small></div></div>
+  <div class="cell"><div class="lbl">Napięcie</div><div class="val"><span id="volt2">—</span><small>V</small></div></div>
+</div>
+
+<div class="botrow">
+  <button class="tgl big-tgl" id="tglLight">Światło</button>
+  <button class="cog" id="cogBtn" aria-label="Serwis">⚙</button>
+</div>
+<div id="msg"></div>
+
+<!-- ── SCHOWEK SERWISOWY ── -->
+<div id="drawer" class="drawer">
+  <div class="dsect">Sterowanie</div>
+  <div class="toggles">
+    <button class="tgl" id="tglPower">Zasilanie</button>
+    <button class="tgl" id="tglLimit">Limit<br>25</button>
+  </div>
+  <div class="toggles" style="margin-top:8px">
+    <button class="tgl" id="tglLimitDefault">Domyślnie<br>bez limitu</button>
+  </div>
+  <div class="warn-note" id="limitWarn"></div>
+
+  <div class="conn">
+    <button class="big" id="btnConn">Połącz z rowerem</button>
+    <button class="big" id="btnScanAll">Skanuj<br>wszystko</button>
+  </div>
+
+  <div class="dsect">Nagrywanie diagnostyczne</div>
+  <div class="toggles">
+    <button class="tgl" id="btnRec">● REC</button>
+    <button class="tgl" id="btnExport">Eksport<br>do pliku</button>
+  </div>
+  <div class="rec-info">Złapane ramki: <span id="recCnt">0</span></div>
+
+  <details>
+    <summary>Diagnostyka / surowe ramki</summary>
+    <div class="toggles" style="margin:8px 0">
+      <button class="tgl" id="tPoll05">POLL 05<br>STATS</button>
+      <button class="tgl" id="tPoll7B">POLL 7B<br>BATT</button>
+      <button class="tgl" id="tPoll60">POLL 60<br>METER</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input id="hexIn" placeholder="własna ramka hex, np. 46 64 55 35 05"
+        style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+        color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:10px">
+      <button class="tgl" id="hexSend" style="flex:0 0 90px">Wyślij<br>+CRC</button>
+    </div>
+    <div id="log"></div>
+  </details>
+</div>
+
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  // Zestawy usług: C11/M1 (FFE0) oraz Air nowej generacji (C3E6FEA0).
+  // Uwaga na odwróconą rolę sufiksów: w Air FEA1 = zapis, FEA2 = notyfikacje.
+  const SETS = [
+    { name:'FFE0 (C11/M1)',
+      svc:'00010203-0405-0607-0809-0a0b0c0dffe0',
+      rx :'00010203-0405-0607-0809-0a0b0c0dffe1',
+      tx :'00010203-0405-0607-0809-0a0b0c0dffe2',
+      autoPoll:true },
+    { name:'FEA0 (Air)',
+      svc:'c3e6fea0-e966-1000-8000-be99c223df6a',
+      rx :'c3e6fea2-e966-1000-8000-be99c223df6a',
+      tx :'c3e6fea1-e966-1000-8000-be99c223df6a',
+      autoPoll:true },
+  ];
+  let activeSet = null;
+
+  // ── protokół Fiido BMS (za esphome-fiido-bms, zweryfikowany na C11 Pro / M1 Pro) ──
+  const SIG0=0x46, SIG1=0x64, T_POLL=0x55, T_NOTIFY=0xAA, T_WRITE=0xAA;
+  const POLLS = [
+    {addr:0x05, len:53, name:'STATS',   every:1},
+    {addr:0x7B, len:13, name:'BATTERY', every:2},
+    {addr:0x60, len:13, name:'METER',   every:2},
+    {addr:0xC8, len:12, name:'ENERGY',  every:3},
+    {addr:0x96, len:12, name:'MOTOR',   every:3},
+  ];
+  // Air ma jeden przycisk cykliczny i brak wyświetlacza poziomów, a źródła
+  // podają różne liczby biegów (2/3/5). Nie zakładamy nic — uczymy się z roweru:
+  // maxGearSeen to najwyższy numer biegu, jaki BMS kiedykolwiek zgłosił.
+  let maxGearSeen = 1;   // minimum: OFF + bieg 1
+
+  const crc = (b, n) => { let c=0; for(let i=0;i<n;i++) c^=b[i]; return c; };
+  const u16 = (p,o) => (p[o]<<8)|p[o+1];
+  const u32 = (p,o) => ((p[o]<<24)>>>0)+(p[o+1]<<16)+(p[o+2]<<8)+p[o+3];
+  const hex = a => [...a].map(x=>x.toString(16).padStart(2,'0')).join(' ');
+
+  function pollFrame(addr, len){
+    const f = new Uint8Array(6);
+    f[0]=SIG0; f[1]=SIG1; f[2]=T_POLL; f[3]=len; f[4]=addr; f[5]=crc(f,5);
+    return f;
+  }
+  function writeFrame(addr, payload){
+    const f = new Uint8Array(6+payload.length);
+    f[0]=SIG0; f[1]=SIG1; f[2]=T_WRITE; f[3]=payload.length; f[4]=addr;
+    f.set(payload,5); f[5+payload.length]=crc(f,5+payload.length);
+    return f;
+  }
+
+  // ── stan ──
+  let device=null, txChar=null, rxBuf=new Uint8Array(0);
+  let pollTimer=null, tick=0, wakeLock=null, connectedAt=0;
+  let motorOn=false, lightOn=false, gear=-1;
+  let curKmh=0, movingMs=0, lastMoveTick=0;   // czas w ruchu (liczony gdy kmh>próg)
+  const MOVE_KMH = 1.5;
+  // ── nagrywanie diagnostyczne ──
+  let recording=false, recBuf=[], recStart=0, recCount=0;
+  let a27=null, a2C=null;  // cache bajtów flag do RMW
+  let limitOff=false;                 // true = limit prędkości zdjęty (bit5 a27 = 0)
+  let limitPersist=false;             // true = limit NIE wraca po włączeniu (bit6 a2C = 0)
+  let socLow=false;
+
+  function log(cls, txt){
+    const el=$('log'); const d=new Date();
+    const t=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}.${String(d.getMilliseconds()).padStart(3,'0')}`;
+    el.innerHTML += `<span class="${cls}">[${t}] ${txt}</span>\n`;
+    while(el.childNodes.length>120) el.removeChild(el.firstChild);
+    el.scrollTop=el.scrollHeight;
+  }
+  const msg = t => $('msg').textContent = t;
+
+  // ── UI ──
+  function buildGears(){
+    const box=$('gears'); box.innerHTML='';
+    // Biegi 0..maxGearSeen. 0 = OFF (brak wspomagania), reszta numerowana.
+    for(let i=0; i<=maxGearSeen; i++){
+      const b=document.createElement('button');
+      b.className='gear'+(i===gear?' cur':'');
+      b.textContent = i===0 ? 'OFF' : String(i);
+      b.disabled = !txChar || !motorOn;
+      b.onclick = () => setGear(i);
+      box.appendChild(b);
+    }
+  }
+  function renderControls(){
+    $('motorstat').textContent = 'ZASILANIE ' + (motorOn?'ON':'OFF');
+    $('motorstat').classList.toggle('off', !motorOn);
+    $('tglPower').classList.toggle('on', motorOn);
+    $('tglLight').classList.toggle('on', lightOn);
+    $('tglLimit').classList.toggle('on', limitOff);
+    $('tglLimit').innerHTML = limitOff ? 'Bez<br>limitu' : 'Limit<br>25';
+    $('tglLimitDefault').classList.toggle('on', limitPersist);
+    const dis = !txChar;
+    $('tglPower').disabled = dis || a27===null;
+    $('tglLight').disabled = dis || a27===null || !motorOn;
+    $('tglLimit').disabled = dis || a27===null || a2C===null || !motorOn;
+    $('tglLimitDefault').disabled = dis || a2C===null || !motorOn;
+    $('limitWarn').textContent = limitPersist
+      ? '⚠ Limit zniesiony na stałe — rower poza zakresem pedelec (25 km/h). Sprawdź przepisy dot. jazdy po drogach publicznych.'
+      : '';
+    buildGears();
+  }
+
+  // ── parsowanie ──
+  function onNotify(ev){
+    const chunk = new Uint8Array(ev.target.value.buffer);
+    log('rx','CHUNK ('+chunk.length+'B): '+hex(chunk));
+    const merged = new Uint8Array(rxBuf.length + chunk.length);
+    merged.set(rxBuf); merged.set(chunk, rxBuf.length);
+    rxBuf = merged;
+    // wyszukuj kompletne ramki 46 64 AA len addr ... crc
+    for(;;){
+      let s=0;
+      while(s+1 < rxBuf.length && !(rxBuf[s]===SIG0 && rxBuf[s+1]===SIG1)) s++;
+      if(s>0) rxBuf = rxBuf.slice(s);
+      if(rxBuf.length < 6) return;
+      const flen = 6 + rxBuf[3];
+      if(rxBuf.length < flen) return;
+      const fr = rxBuf.slice(0, flen);
+      rxBuf = rxBuf.slice(flen);
+      if(fr[2]!==T_NOTIFY){ log('er','pominięto typ 0x'+fr[2].toString(16)); continue; }
+      if(fr[flen-1]!==crc(fr,flen-1)){ log('er','CRC błędne: '+hex(fr)); continue; }
+      const addr=fr[4], p=fr.slice(5,flen-1);
+      log('rx',`RX ${addr.toString(16).padStart(2,'0')} (${p.length}B): ${hex(p)}`);
+      if(recording){
+        const dt=((performance.now()-recStart)/1000).toFixed(2);
+        recBuf.push(`+${dt}s  addr=${addr.toString(16).padStart(2,'0')}  len=${p.length}  ${hex(p)}`);
+        recCount++;
+        $('recCnt').textContent = recCount;
+      }
+      parse(addr, p);
+    }
+  }
+
+  function parse(addr, p){
+    if(addr===0x05 && p.length===53){                 // STATS
+      $('total').textContent=(u32(p,23)/10).toFixed(1);
+      $('trip').textContent =(u16(p,27)/10).toFixed(1);
+      const kmh=u16(p,29)/10;
+      curKmh = kmh;
+      $('spd').textContent = kmh.toFixed(1);
+      $('spd').classList.toggle('on', kmh>0.5);
+      setSoc(p[31]);
+      // biegi: uczymy się liczby z roweru zamiast zakładać.
+      gear = p[33];
+      // Bajt 0x25 (tryb) próbujemy odczytać, ale nie ufamy mu jako jedynemu
+      // źródłu — najwyższy realny bieg bierzemy z obserwacji bajtu 0x26.
+      const r25=p[32], hi=(r25>>4)&15, lo=r25&15, mgMode=Math.max(hi,lo);
+      const candidate = Math.max(gear, (mgMode>=1&&mgMode<=9)?mgMode:0);
+      if(candidate > maxGearSeen){ maxGearSeen = candidate; log('ev','Wykryto biegi: 0..'+maxGearSeen); }
+      a27 = p[34]; a2C = p[39];
+      motorOn = (a27 & 0x80)!==0;
+      lightOn = motorOn && (a27 & 0x08)!==0;
+      limitOff = (a27 & 0x20)===0;  // bit5 = 0 → limit zdjęty
+      // bit6 rejestru 0x2C: 1 = limit resetuje się przy włączeniu roweru.
+      // "Domyślnie bez limitu" = ten bit ma być 0 (limit NIE wraca).
+      limitPersist = (a2C & 0x40)===0;
+      renderControls();
+    } else if(addr===0x7B && p.length===13){          // BATTERY
+      const v=u16(p,4)/10, i=u16(p,9)/10;
+      $('volt').textContent=v.toFixed(1);
+      $('volt2').textContent=v.toFixed(1);
+      $('amp').textContent=i.toFixed(1);
+      $('watt').textContent=Math.round(v*i);
+    }
+    // Ramki silnikowe — długości ŚCIŚLE jak w komponencie (odrzucanie złych
+    // długości jest zamierzone). 0x60 (METER) NIE zawiera momentu/kadencji/
+    // temperatury — to tylko wersje sprzętu, więc nie dotykamy tych pól.
+    else if(addr===0xC8 && p.length===12){            // ENERGY: moment @0, kadencja @2
+      $('torq').textContent=(u16(p,0)/10).toFixed(1);
+      $('rpm').textContent=u16(p,2);
+    }
+    else if(addr===0x96 && p.length===12){            // MOTOR: temperatura @7 (signed)
+      let t=u16(p,7); if(t>32767) t-=65536;
+      $('mtemp').textContent=t;
+    }
+  }
+
+  function setSoc(s){
+    $('soc').textContent=s;
+    const bar=$('socbar');
+    bar.style.width=s+'%';
+    bar.className = s<=10?'crit': s<=25?'low':'';
+    if(s<=15 && !socLow){ socLow=true; msg('Niski poziom baterii: '+s+'%'); }
+    if(s>20) socLow=false;
+  }
+
+  // ── zapis ──
+  async function tx(frame, label){
+    if(!txChar) return;
+    try{
+      log('tx',`TX ${label}: ${hex(frame)}`);
+      if(txChar.properties.writeWithoutResponse) await txChar.writeValueWithoutResponse(frame);
+      else await txChar.writeValue(frame);
+    }catch(e){ log('er','TX błąd: '+e.message); }
+  }
+  async function setGear(g){
+    if(!motorOn){ msg('Włącz zasilanie roweru, aby zmienić bieg'); return; }
+    await tx(writeFrame(0x26, [g]), 'GEAR='+g);
+  }
+  $('tglPower').onclick = async () => {
+    if(a27===null) return;
+    let b = motorOn ? (a27 & ~0x80 & ~0x08) : (a27 | 0x80);
+    await tx(writeFrame(0x27, [b & 0xFF]), 'POWER');
+  };
+  $('tglLight').onclick = async () => {
+    if(a27===null || !motorOn) return;
+    let b = lightOn ? (a27 & ~0x08) : (a27 | 0x08);
+    await tx(writeFrame(0x27, [b & 0xFF]), 'LIGHT');
+  };
+  // LIMIT: sekwencja jak w set_speed_limit() komponentu.
+  // Zdjęcie: (1) 0x2C bit7=0, (2) po opóźnieniu 0x3C=100 i 0x27 bit5=0
+  //   — opóźnienie konieczne, bo BMS po zdjęciu flagi PAS sam wpisuje 0x3C=25.
+  // Przywrócenie: (1) 0x2C bit7=1, (2) od razu 0x3C=25 i 0x27 bit5=1.
+  $('tglLimit').onclick = async () => {
+    if(a27===null || a2C===null || !motorOn) return;
+    const removing = !limitOff;               // cel: zdjąć limit?
+    const val   = removing ? 100 : 25;
+    let b2C = removing ? (a2C & ~0x80) : (a2C | 0x80);
+    let b27 = removing ? (a27 & ~0x20) : (a27 | 0x20);
+    await tx(writeFrame(0x2C, [b2C & 0xFF]), 'LIMIT faza1 (0x2C bit7='+(removing?0:1)+')');
+    a2C = b2C;
+    const phase2 = async () => {
+      await tx(writeFrame(0x3C, [val]), 'LIMIT faza2 (0x3C='+val+')');
+      await tx(writeFrame(0x27, [b27 & 0xFF]), 'LIMIT faza2 (0x27 bit5='+(removing?0:1)+')');
+      a27 = b27;
+    };
+    if(removing) setTimeout(phase2, 200); else await phase2();
+  };
+  // "Domyślnie bez limitu": bit6 rejestru 0x2C.
+  // 0 = limit NIE wraca po włączeniu roweru (trwałe zniesienie).
+  // 1 = limit resetuje się przy każdym cyklu zasilania (fabryczne).
+  $('tglLimitDefault').onclick = async () => {
+    if(a2C===null || !motorOn) return;
+    const persist = !limitPersist;                 // cel: ma NIE wracać?
+    let b2C = persist ? (a2C & ~0x40) : (a2C | 0x40);
+    await tx(writeFrame(0x2C, [b2C & 0xFF]), 'LIMIT DEFAULT (0x2C bit6='+(persist?0:1)+')');
+    a2C = b2C;
+  };
+  // koło zębate — schowek serwisowy
+  $('cogBtn').onclick = () => {
+    const d=$('drawer'); const open=d.classList.toggle('open');
+    $('cogBtn').classList.toggle('open', open);
+    if(open) d.scrollIntoView({behavior:'smooth', block:'start'});
+  };
+
+  // ── nagrywanie diagnostyczne ──
+  $('btnRec').onclick = () => {
+    recording = !recording;
+    $('btnRec').classList.toggle('rec', recording);
+    if(recording){
+      recBuf=[]; recCount=0; recStart=performance.now();
+      $('recCnt').textContent='0';
+      recBuf.push('# Fiido Air — log diagnostyczny surowych ramek');
+      recBuf.push('# '+(activeSet?activeSet.name:'?')+'  '+new Date().toISOString());
+      recBuf.push('# format: +czas  addr=HH  len=N  bajty payload (bez nagłówka i CRC)');
+      recBuf.push('');
+      $('btnRec').textContent='■ STOP';
+      log('ev','REC start');
+    } else {
+      $('btnRec').textContent='● REC';
+      log('ev','REC stop — złapano '+recCount+' ramek');
+    }
+  };
+  $('btnExport').onclick = () => {
+    if(!recBuf.length){ msg('Brak nagrania — najpierw REC'); return; }
+    const txt = recBuf.join('\n')+'\n';
+    const blob = new Blob([txt], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    a.href=url; a.download='fiido-air-log-'+stamp+'.txt';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    log('ev','Eksport: '+recCount+' ramek do pliku');
+    msg('Zapisano '+recCount+' ramek do pliku');
+  };
+
+  // ── pętla odpytywania ──
+  function startPolling(){
+    stopPolling(); tick=0;
+    pollTimer = setInterval(async () => {
+      tick++;
+      for(const p of POLLS){
+        if(tick % p.every === 0){ await tx(pollFrame(p.addr, p.len), 'POLL '+p.name); }
+      }
+    }, 1000);
+  }
+  function stopPolling(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
+
+  // ── połączenie ──
+  async function connect(scanAll){
+    if(device){ await disconnect(); return; }
+    if(!navigator.bluetooth){ msg('Brak Web Bluetooth — otwórz w przeglądarce Bluefy'); return; }
+    try{
+      msg('Skanowanie…');
+      const allSvcs = SETS.map(s=>s.svc);
+      const opts = scanAll
+        ? { acceptAllDevices:true, optionalServices:allSvcs }
+        : { filters:[{namePrefix:'Fiido'}], optionalServices:allSvcs };
+      device = await navigator.bluetooth.requestDevice(opts);
+      log('ev','Wybrano: '+(device.name||'(bez nazwy)'));
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      msg('Łączenie…');
+      const gatt = await device.gatt.connect();
+      connectedAt = performance.now();
+      log('ev','KROK 1: GATT połączony');
+      // ── ZWIAD + autodetekcja w jednej odpornej pętli ──
+      activeSet = null; let svc = null;
+      try{
+        const all = await gatt.getPrimaryServices();
+        log('ev','KROK 2: usługi ('+all.length+'):');
+        for(const s of all){
+          const uuid = (s && s.uuid) ? String(s.uuid).toLowerCase() : '(brak uuid)';
+          let line = '  SVC '+uuid;
+          try{
+            const chars = await s.getCharacteristics();
+            for(const c of chars){
+              const pr=c.properties||{}, fl=[];
+              if(pr.read)fl.push('R'); if(pr.write)fl.push('W');
+              if(pr.writeWithoutResponse)fl.push('WNR');
+              if(pr.notify)fl.push('N'); if(pr.indicate)fl.push('I');
+              line += '\n    CHR '+((c&&c.uuid)?c.uuid:'(brak)')+' ['+fl.join(',')+']';
+            }
+          }catch(e){ line += '\n    (charakterystyki: '+(e&&e.message||e)+')'; }
+          log('rx', line);
+          // dopasowanie do znanego zestawu
+          if(!activeSet){
+            const hit = SETS.find(set => set.svc.toLowerCase() === uuid);
+            if(hit){ activeSet = hit; svc = s; }
+          }
+        }
+      }catch(e){ log('er','KROK 2: enumeracja nieudana: '+(e&&e.message||e)); }
+
+      if(!activeSet){
+        // awaryjnie: spróbuj pobrać usługi po znanych UUID wprost
+        for(const set of SETS){
+          try{ svc = await gatt.getPrimaryService(set.svc); activeSet = set; break; }
+          catch(_){}
+        }
+      }
+      if(!activeSet){ log('er','KROK 3: brak znanej usługi (FFE0/FEA0)'); msg('Nieznane urządzenie — patrz log'); await disconnect(true); return; }
+      log('ev','KROK 3: usługa '+activeSet.name);
+      const rx   = await svc.getCharacteristic(activeSet.rx);
+      txChar     = await svc.getCharacteristic(activeSet.tx);
+      log('ev','KROK 4: rx/tx OK, włączam notyfikacje…');
+      await rx.startNotifications();
+      rx.addEventListener('characteristicvaluechanged', onNotify);
+      log('ev','KROK 5: notyfikacje włączone');
+      $('blename').textContent = (device.name||'Połączono')+' · '+activeSet.name;
+      $('blename').classList.remove('off');
+      $('btnConn').textContent='Rozłącz'; $('btnConn').classList.add('connected');
+      msg('');
+      if(activeSet.autoPoll){
+        log('ev','KROK 6: start pollingu za 2 s…');
+        setTimeout(()=>{ if(device){ startPolling(); log('ev','KROK 7: polling wystartował'); } }, 2000);
+      } else {
+        log('ev','KROK 6: TRYB NASŁUCHU — bez pollingu; użyj przycisków testowych');
+        msg('Tryb nasłuchu — testuj ramki z panelu Diagnostyka');
+        document.querySelector('details').open = true;
+      }
+      acquireWake(); renderControls();
+    }catch(e){
+      log('er', e.message); 
+      msg(e.name==='NotFoundError' ? 'Nie wybrano urządzenia' : 'Błąd: '+e.message);
+      await disconnect(true);
+    }
+  }
+  function onDisconnected(){
+    const dt = connectedAt ? Math.round(performance.now()-connectedAt) : -1;
+    log('er','ROZŁĄCZONO przez urządzenie po '+dt+' ms od połączenia');
+    msg('Rozłączono po '+dt+' ms — zrób zrzut logu diagnostycznego');
+    disconnect(true);
+  }
+  async function disconnect(silent){
+    stopPolling();
+    try{ if(device && device.gatt.connected) device.gatt.disconnect(); }catch(_){}
+    device=null; txChar=null; a27=null; a2C=null; motorOn=false; rxBuf=new Uint8Array(0);
+    $('blename').textContent='Rozłączony'; $('blename').classList.add('off');
+    $('btnConn').textContent='Połącz z rowerem'; $('btnConn').classList.remove('connected');
+    if(wakeLock){ try{wakeLock.release();}catch(_){} wakeLock=null; }
+    $('wake').classList.add('off');
+    renderControls();
+    if(!silent) msg('');
+  }
+
+  async function acquireWake(){
+    try{
+      if('wakeLock' in navigator){
+        wakeLock = await navigator.wakeLock.request('screen');
+        $('wake').classList.remove('off');
+        wakeLock.addEventListener('release', ()=>$('wake').classList.add('off'));
+      } else msg('Wake Lock niedostępny — ustaw Blokadę automatyczną na Nigdy');
+    }catch(_){}
+  }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='visible' && device) acquireWake();
+  });
+
+  $('btnConn').onclick   = () => connect(false);
+  $('btnScanAll').onclick= () => connect(true);
+
+  // ── panel testowy ──
+  $('tPoll05').onclick = () => tx(pollFrame(0x05,53), 'TEST POLL STATS');
+  $('tPoll7B').onclick = () => tx(pollFrame(0x7B,13), 'TEST POLL BATTERY');
+  $('tPoll60').onclick = () => tx(pollFrame(0x60,13), 'TEST POLL METER');
+  $('hexSend').onclick = () => {
+    const raw = $('hexIn').value.trim().replace(/[^0-9a-fA-F ]/g,'');
+    if(!raw){ msg('Wpisz bajty hex'); return; }
+    const bytes = raw.split(/\s+/).map(x=>parseInt(x,16)).filter(x=>!isNaN(x)&&x>=0&&x<=255);
+    if(!bytes.length){ msg('Niepoprawny hex'); return; }
+    const f = new Uint8Array(bytes.length+1);
+    f.set(bytes); f[bytes.length] = crc(f, bytes.length);
+    tx(f, 'TEST CUSTOM');
+  };
+
+  // ── licznik czasu w ruchu: nalicza tylko gdy prędkość > próg ──
+  function fmtTime(ms){
+    const s=Math.floor(ms/1000), h=Math.floor(s/3600),
+          m=Math.floor((s%3600)/60), ss=s%60;
+    return h>0 ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`
+               : `${m}:${String(ss).padStart(2,'0')}`;
+  }
+  setInterval(()=>{
+    const now=Date.now();
+    if(device && curKmh>=MOVE_KMH){
+      if(lastMoveTick) movingMs += now-lastMoveTick;
+    }
+    lastMoveTick = now;
+    $('rtime').textContent = fmtTime(movingMs);
+  }, 1000);
+
+  buildGears(); renderControls();
+})();
+</script>
+</body>
+</html>
