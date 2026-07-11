@@ -167,9 +167,6 @@
 <div class="grid params">
   <div class="cell"><div class="lbl">Prąd</div><div class="val"><span id="amp">—</span><small>A</small></div></div>
   <div class="cell"><div class="lbl">Łącznie</div><div class="val"><span id="total">—</span><small>km</small></div></div>
-  <div class="cell"><div class="lbl">Moment korby</div><div class="val"><span id="torq">—</span><small>Nm</small></div></div>
-  <div class="cell"><div class="lbl">Kadencja</div><div class="val"><span id="rpm">—</span><small>rpm</small></div></div>
-  <div class="cell"><div class="lbl">Temp. silnika</div><div class="val"><span id="mtemp">—</span><small>°C</small></div></div>
   <div class="cell"><div class="lbl">Napięcie</div><div class="val"><span id="volt2">—</span><small>V</small></div></div>
 </div>
 
@@ -195,22 +192,6 @@
     <button class="big" id="btnConn">Połącz z rowerem</button>
     <button class="big" id="btnScanAll">Skanuj<br>wszystko</button>
   </div>
-
-  <details>
-    <summary>Diagnostyka / surowe ramki</summary>
-    <div class="toggles" style="margin:8px 0">
-      <button class="tgl" id="tPoll05">POLL 05<br>STATS</button>
-      <button class="tgl" id="tPoll7B">POLL 7B<br>BATT</button>
-      <button class="tgl" id="tPoll60">POLL 60<br>METER</button>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <input id="hexIn" placeholder="własna ramka hex, np. 46 64 55 35 05"
-        style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;
-        color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:10px">
-      <button class="tgl" id="hexSend" style="flex:0 0 90px">Wyślij<br>+CRC</button>
-    </div>
-    <div id="log"></div>
-  </details>
 </div>
 
 
@@ -238,9 +219,10 @@
   const SIG0=0x46, SIG1=0x64, T_POLL=0x55, T_NOTIFY=0xAA, T_WRITE=0xAA;
   const POLLS = [
     {addr:0x05, len:53, name:'STATS',   every:1},
-    {addr:0x7B, len:13, name:'BATTERY', every:3},
+    {addr:0x7B, len:13, name:'BATTERY', every:2},
+    {addr:0x60, len:13, name:'METER',   every:2},
     {addr:0xC8, len:12, name:'ENERGY',  every:3},
-    {addr:0x96, len:12, name:'MOTOR',   every:9},
+    {addr:0x96, len:12, name:'MOTOR',   every:3},
   ];
   // Air ma jeden przycisk cykliczny i brak wyświetlacza poziomów, a źródła
   // podają różne liczby biegów (2/3/5). Nie zakładamy nic — uczymy się z roweru:
@@ -275,13 +257,7 @@
   let limitPersist=false;             // true = limit NIE wraca po włączeniu (bit6 a2C = 0)
   let socLow=false;
 
-  function log(cls, txt){
-    const el=$('log'); const d=new Date();
-    const t=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}.${String(d.getMilliseconds()).padStart(3,'0')}`;
-    el.innerHTML += `<span class="${cls}">[${t}] ${txt}</span>\n`;
-    while(el.childNodes.length>120) el.removeChild(el.firstChild);
-    el.scrollTop=el.scrollHeight;
-  }
+  function log(cls, txt){ /* wersja czysta — logowanie wyłączone */ }
   const msg = t => $('msg').textContent = t;
 
   // ── UI ──
@@ -336,7 +312,6 @@
       if(fr[2]!==T_NOTIFY){ log('er','pominięto typ 0x'+fr[2].toString(16)); continue; }
       if(fr[flen-1]!==crc(fr,flen-1)){ log('er','CRC błędne: '+hex(fr)); continue; }
       const addr=fr[4], p=fr.slice(5,flen-1);
-      log('rx',`RX ${addr.toString(16).padStart(2,'0')} (${p.length}B): ${hex(p)}`);
       parse(addr, p);
     }
   }
@@ -371,13 +346,11 @@
       $('volt2').textContent=v.toFixed(1);
       $('amp').textContent=i.toFixed(1);
       $('watt').textContent=Math.round(v*i);
-    } else if(addr===0xC8 && p.length===12){          // ENERGY
-      $('torq').textContent=(u16(p,0)/10).toFixed(1);
-      $('rpm').textContent=u16(p,2);
-    } else if(addr===0x96 && p.length===12){          // MOTOR
-      let t=u16(p,7); if(t>32767) t-=65536;
-      $('mtemp').textContent=t;
     }
+    // Ramki 0xC8/0x96/0x60 zostawiamy odbierane (widoczne w logu diagnostycznym),
+    // ale NIE wpisujemy z nich momentu/kadencji/temperatury: analiza logów C11
+    // wykazała, że te wartości nie są raportowane przez BLE (pola były zerowe/stałe
+    // niezależnie od nacisku na korbę i obrotów koła).
   }
 
   function setSoc(s){
@@ -448,6 +421,7 @@
     if(open) d.scrollIntoView({behavior:'smooth', block:'start'});
   };
 
+  // ── nagrywanie diagnostyczne ──
   // ── pętla odpytywania ──
   function startPolling(){
     stopPolling(); tick=0;
@@ -571,20 +545,6 @@
 
   $('btnConn').onclick   = () => connect(false);
   $('btnScanAll').onclick= () => connect(true);
-
-  // ── panel testowy ──
-  $('tPoll05').onclick = () => tx(pollFrame(0x05,53), 'TEST POLL STATS');
-  $('tPoll7B').onclick = () => tx(pollFrame(0x7B,13), 'TEST POLL BATTERY');
-  $('tPoll60').onclick = () => tx(pollFrame(0x60,13), 'TEST POLL METER');
-  $('hexSend').onclick = () => {
-    const raw = $('hexIn').value.trim().replace(/[^0-9a-fA-F ]/g,'');
-    if(!raw){ msg('Wpisz bajty hex'); return; }
-    const bytes = raw.split(/\s+/).map(x=>parseInt(x,16)).filter(x=>!isNaN(x)&&x>=0&&x<=255);
-    if(!bytes.length){ msg('Niepoprawny hex'); return; }
-    const f = new Uint8Array(bytes.length+1);
-    f.set(bytes); f[bytes.length] = crc(f, bytes.length);
-    tx(f, 'TEST CUSTOM');
-  };
 
   // ── licznik czasu w ruchu: nalicza tylko gdy prędkość > próg ──
   function fmtTime(ms){
