@@ -168,6 +168,8 @@
 <div id="toast"></div>
 <script>
 'use strict';
+window.addEventListener('error',e=>{ try{ log('ERR',(e.message||'?')+' @'+(e.lineno||'?'),'er'); }catch(_){alert('JS: '+e.message);} });
+window.addEventListener('unhandledrejection',e=>{ try{ log('ERR','promise: '+(e.reason&&e.reason.message||e.reason),'er'); }catch(_){}});
 /* ════════ PROTOKÓŁ FIIDO (zweryfikowany w dzikus/esphome-fiido-bms) ════════
    Poll:   46 64 55 [len] [addr] [crc]         (crc = XOR wszystkich wcześniejszych bajtów)
    Notify: 46 64 AA [len] [addr] [payload...] [crc]
@@ -177,8 +179,8 @@
 const SVC   = '00010203-0405-0607-0809-0a0b0c0dffe0';
 const CH_RX = '00010203-0405-0607-0809-0a0b0c0dffe1';
 const CH_TX = '00010203-0405-0607-0809-0a0b0c0dffe2';
-const RECON_SVCS = [SVC, 0xFE59, 'device_information', 'battery_service',
-  'generic_attribute', '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
+const EXTRA_SVCS = [0xFE59, 'device_information', 'battery_service',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
 const KNOWN = [ [0x7B,13,'BATTERY'],[0xAF,12,'CTRL'],[0x96,12,'MOTOR'],
   [0xC8,12,'ENERGY'],[0x05,53,'STATS'],[0x60,13,'METER'],[0x3C,1,'SPEEDLIM'] ];
 const KNOWN_ADDRS = new Set(KNOWN.map(k=>k[0]));
@@ -262,12 +264,20 @@ function setConnUI(on){
 }
 
 async function connect(all){
+  toast('Otwieram wybór urządzenia…');
   try{
     setStatus('Wybór urządzenia…','busy');
-    const opts = all
-      ? {acceptAllDevices:true, optionalServices:RECON_SVCS}
-      : {filters:[{namePrefix:'Fiido'}], optionalServices:RECON_SVCS};
-    dev = await navigator.bluetooth.requestDevice(opts);
+    log('EV','requestDevice start (all='+!!all+')','ev');
+    const mk = svcs => all
+      ? {acceptAllDevices:true, optionalServices:svcs}
+      : {filters:[{namePrefix:'Fiido'}], optionalServices:svcs};
+    try{
+      dev = await navigator.bluetooth.requestDevice(mk([SVC].concat(EXTRA_SVCS)));
+    }catch(e1){
+      if(e1.name==='NotFoundError'||e1.name==='AbortError') throw e1; /* user anulował / brak urządzeń */
+      log('EV','requestDevice z rozszerzonymi usługami odrzucony ('+e1.name+': '+e1.message+') — ponawiam minimalnie','er');
+      dev = await navigator.bluetooth.requestDevice(mk([SVC]));
+    }
     dev.addEventListener('gattserverdisconnected',()=>{
       log('EV','DISCONNECT gattserverdisconnected','er');
       setStatus('Rozłączony ('+(dev&&dev.name||'?')+')',''); setConnUI(false); stopSweep(true);
@@ -473,8 +483,18 @@ $('btnPrev').onclick=async()=>{
 
 /* ════════ START ════════ */
 buildGrid();
+(function(){
+  const ua=navigator.userAgent;
+  const bt=!!navigator.bluetooth;
+  setTimeout(()=>{
+    log('EV','ENV bt='+bt+' | '+ua.slice(0,90),'ev');
+    if(bt&&navigator.bluetooth.getAvailability)
+      navigator.bluetooth.getAvailability().then(a=>log('EV','ENV getAvailability='+a,'ev'))
+        .catch(e=>log('EV','ENV getAvailability err '+e.message,'er'));
+  },50);
+})();
 if(!navigator.bluetooth){
-  setStatus('Web Bluetooth niedostępny — otwórz w Bluefy',''); 
+  setStatus('WEB BLUETOOTH NIEDOSTĘPNY — ta karta nie działa w Safari/Chrome iOS, otwórz stronę w aplikacji Bluefy',''); 
   $('btnConnect').disabled=true; $('btnConnectAll').disabled=true;
 }
 const meta=localStorage.getItem(LS_META);
