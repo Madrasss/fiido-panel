@@ -176,10 +176,12 @@ window.addEventListener('unhandledrejection',e=>{ try{ log('ERR','promise: '+(e.
    Handshake: poll addr=0x0D len=0x0D
    Usługa 00010203-0405-0607-0809-0A0B0C0DFFE0: FFE1 notify (RX), FFE2 write (TX)
    Skaner wysyła WYŁĄCZNIE ramki typu poll (0x55) — zero zapisów.            */
-const SVC   = '00010203-0405-0607-0809-0a0b0c0dffe0';
+const SVC   = '00010203-0405-0607-0809-0a0b0c0dffe0';   /* C11/M1 */
 const CH_RX = '00010203-0405-0607-0809-0a0b0c0dffe1';
 const CH_TX = '00010203-0405-0607-0809-0a0b0c0dffe2';
-const EXTRA_SVCS = [0xFE59, 'device_information', 'battery_service',
+const SVC_AIR = 'c3e6fea0-e966-1000-8000-be99c223df6a';   /* Fiido Air (MIVICE) */
+const DFU_BLOCK = ['fe59','0000fe59'];                    /* Nordic DFU - NIGDY nie dotykać */
+const EXTRA_SVCS = [SVC_AIR, 0xFE59, 'device_information', 'battery_service',
   '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
 const KNOWN = [ [0x7B,13,'BATTERY'],[0xAF,12,'CTRL'],[0x96,12,'MOTOR'],
   [0xC8,12,'ENERGY'],[0x05,53,'STATS'],[0x60,13,'METER'],[0x3C,1,'SPEEDLIM'] ];
@@ -288,11 +290,14 @@ async function connect(all){
     log('EV','CONNECTED','ev');
     setStatus('Połączony: '+dev.name,'on'); setConnUI(true);
 
-    /* ── ZWIAD: pełna lista usług/charakterystyk zanim czegokolwiek dotkniemy ── */
+    /* ── ZWIAD + AUTODETEKCJA KANAŁU ── */
+    const found=[];   /* {svcUuid, rx, tx} kandydaci */
     try{
       const svcs = await gatt.getPrimaryServices();
       for(const s of svcs){
-        log('EV','SVC '+s.uuid,'ev');
+        const isDfu = DFU_BLOCK.some(d=>s.uuid.toLowerCase().indexOf(d)===0);
+        log('EV','SVC '+s.uuid+(isDfu?' [DFU - pomijam]':''),'ev');
+        let rxC=null, txC=null;
         try{
           const chs = await s.getCharacteristics();
           for(const c of chs){
@@ -300,18 +305,25 @@ async function connect(all){
             for(const k of ['read','write','writeWithoutResponse','notify','indicate'])
               if(p[k]) pr.push(k);
             log('EV','  CHR '+c.uuid+' ['+pr.join(',')+']','ev');
+            if(!isDfu){
+              if(p.notify) rxC=c;
+              if(p.write||p.writeWithoutResponse) txC=txC||c;
+            }
           }
         }catch(e){ log('EV','  CHR err: '+e.message,'er'); }
+        if(rxC&&txC) found.push({svcUuid:s.uuid, rx:rxC, tx:txC});
       }
     }catch(e){ log('EV','SVC enum err: '+e.message,'er'); }
 
-    /* ── subskrypcja FFE1 ── */
-    const svc = await gatt.getPrimaryService(SVC);
-    chRx = await svc.getCharacteristic(CH_RX);
-    chTx = await svc.getCharacteristic(CH_TX);
+    /* preferencja: znana usługa C11 (FFE0) → znana usługa Air → pierwszy kandydat */
+    let pick = found.find(f=>f.svcUuid===SVC) || found.find(f=>f.svcUuid===SVC_AIR) || found[0];
+    if(!pick) throw new Error('nie znaleziono pary notify+write poza DFU');
+    chRx = pick.rx; chTx = pick.tx;
+    log('EV','LINK svc='+pick.svcUuid,'ev');
+    log('EV','LINK rx='+chRx.uuid+' tx='+chTx.uuid,'ev');
     await chRx.startNotifications();
     chRx.addEventListener('characteristicvaluechanged', onNotify);
-    log('EV','NOTIFY-ON FFE1; okres ciszy 3 s (pasywny nasłuch)','ev');
+    log('EV','NOTIFY-ON; okres ciszy 3 s (pasywny nasłuch)','ev');
     setStatus('Nasłuch: '+dev.name,'on');
 
     clearTimeout(quietTimer);
@@ -326,8 +338,10 @@ async function connect(all){
 }
 
 function onNotify(ev){
-  const v=new Uint8Array(ev.target.value.buffer);
-  /* reasembler: dane mogą przychodzić we fragmentach (MTU) */
+  const dv=ev.target.value;
+  const v=new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  rxCount++; $('cRx').textContent=rxCount;
+  log('RXC', v.length+'|'+hex(v),'rx');          /* surowa porcja - zawsze */
   const nb=new Uint8Array(rxBuf.length+v.length);
   nb.set(rxBuf); nb.set(v,rxBuf.length); rxBuf=nb;
   extractFrames();
@@ -337,14 +351,13 @@ function extractFrames(){
     /* znajdź sygnaturę 46 64 */
     let i=0;
     while(i+1<rxBuf.length && !(rxBuf[i]===0x46&&rxBuf[i+1]===0x64)) i++;
-    if(i>0){ log('RAW','drop='+hex(rxBuf.slice(0,i)),'er'); rxBuf=rxBuf.slice(i); }
-    if(rxBuf.length<6) return;
+    if(i>0) rxBuf=rxBuf.slice(i);                 /* smieci juz zalogowane jako RXC */
+    if(rxBuf.length<6){ if(rxBuf.length>512) rxBuf=new Uint8Array(0); return; }
     const dlen=rxBuf[3], total=6+dlen;
     if(rxBuf.length<total) return;               /* czekamy na resztę */
     const f=rxBuf.slice(0,total); rxBuf=rxBuf.slice(total);
     const ok = f[5+dlen]===crc(f,5+dlen);
     const addr=f[4], type=f[2];
-    rxCount++; $('cRx').textContent=rxCount;
     log('RX', h2(addr)+'|'+dlen+'|'+(ok?'ok':'CRC!')+'|'+hex(f),'rx');
     if(type===0xAA && ok) markResponder(addr,dlen,f);
   }
