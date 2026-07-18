@@ -114,8 +114,9 @@
     <button id="btnHandshake" class="small" disabled>Handshake</button>
   </div>
   <div class="row" style="margin-top:8px">
-    <button id="btnSweep1" disabled>Sweep 0x00–0xFF (len 1)</button>
-    <button id="btnSweep53" disabled>Sweep dogłębny (len 53)</button>
+    <button id="btnSweep1" disabled>Sweep len 1</button>
+    <button id="btnSweep2" disabled>Sweep len 2</button>
+    <button id="btnSweep53" disabled>Sweep len 53</button>
   </div>
   <div class="row" style="margin-top:8px">
     <button id="btnPause" class="small" disabled>Pauza</button>
@@ -255,7 +256,7 @@ let dev=null, chTx=null, chRx=null, rxBuf=new Uint8Array(0), quietTimer=null;
 function setStatus(txt,cls){ $('statusTxt').textContent=txt;
   $('dot').className=cls||''; }
 function setConnUI(on){
-  ['btnKnown','btnHandshake','btnSweep1','btnSweep53'].forEach(i=>$(i).disabled=!on);
+  ['btnKnown','btnHandshake','btnSweep1','btnSweep2','btnSweep53'].forEach(i=>$(i).disabled=!on);
   $('btnDisconnect').disabled=!on;
   $('btnConnect').disabled=on; $('btnConnectAll').disabled=on;
 }
@@ -385,7 +386,7 @@ async function runSweep(len){
   if(sweep) return;
   sweep={addr:0,len,paused:false,stop:false,waiting:-1,gotReply:false};
   $('btnPause').disabled=false; $('btnStop').disabled=false;
-  $('btnSweep1').disabled=true; $('btnSweep53').disabled=true;
+  $('btnSweep1').disabled=true; $('btnSweep2').disabled=true; $('btnSweep53').disabled=true;
   log('MK','SWEEP-START len='+len,'mk');
   for(let a=0;a<256;a++){
     if(sweep.stop) break;
@@ -399,6 +400,7 @@ async function runSweep(len){
     /* czekaj na odpowiedź max 300 ms */
     const t=Date.now();
     while(!sweep.gotReply && Date.now()-t<300) await wait(20);
+    if(!sweep.gotReply) log('NR','0x'+h2(a)+'|timeout300','er');
     await wait(80);
   }
   const last=$('g'+sweep.addr); if(last) last.classList.remove('cur');
@@ -406,7 +408,7 @@ async function runSweep(len){
   $('sweepInfo').textContent='Sweep zakończony — odpowiedziało '+respMap.size+' adresów';
   sweep=null;
   $('btnPause').disabled=true; $('btnStop').disabled=true; $('btnPause').textContent='Pauza';
-  if(chTx){ $('btnSweep1').disabled=false; $('btnSweep53').disabled=false; }
+  if(chTx){ $('btnSweep1').disabled=false; $('btnSweep2').disabled=false; $('btnSweep53').disabled=false; }
 }
 function stopSweep(silent){ if(sweep){ sweep.stop=true; if(!silent)log('MK','SWEEP-STOP','mk'); } }
 
@@ -453,6 +455,7 @@ $('btnDisconnect').onclick=()=>{ stopSweep(); if(dev&&dev.gatt.connected)dev.gat
 $('btnHandshake').onclick=sendHandshake;
 $('btnKnown').onclick=pollKnown;
 $('btnSweep1').onclick=()=>runSweep(1);
+$('btnSweep2').onclick=()=>runSweep(2);
 $('btnSweep53').onclick=()=>runSweep(53);
 $('btnPause').onclick=()=>{ if(!sweep)return; sweep.paused=!sweep.paused;
   $('btnPause').textContent=sweep.paused?'Wznów':'Pauza';
