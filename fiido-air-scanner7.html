@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0B0F14">
+<title>Fiido Air — Skaner BLE</title>
+<style>
+  :root{
+    --bg:#0B0F14; --panel:#121821; --panel2:#0F141C; --line:#1F2937;
+    --ink:#E8EEF4; --dim:#8A97A6; --faint:#556270;
+    --amber:#FFB454; --ok:#3DDC84; --err:#FF5D5D; --tx:#6CB8FF; --mark:#F7C948;
+    --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,system-ui,sans-serif;
+    font-size:15px;overscroll-behavior:none}
+  body{padding:10px 10px calc(14px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+
+  /* ── nagłówek instrumentu ── */
+  header{display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:2px solid var(--amber);padding:4px 2px 8px;margin-bottom:10px}
+  header h1{font-size:17px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+  header h1 small{color:var(--amber);font-weight:800}
+  #counters{font-family:var(--mono);font-size:12px;color:var(--dim);text-align:right;line-height:1.5}
+  #counters b{color:var(--ink);font-weight:600}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:10px;margin-bottom:10px}
+  .card h2{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:8px}
+
+  /* ── status ── */
+  #statusRow{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px}
+  #dot{width:10px;height:10px;border-radius:50%;background:var(--err);flex:none;
+    box-shadow:0 0 6px var(--err)}
+  #dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  #dot.busy{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  #statusTxt{color:var(--dim);word-break:break-all}
+
+  /* ── przyciski ── */
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  button{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+    border-radius:10px;padding:12px 10px;font-size:14px;font-weight:600;flex:1 1 auto;
+    min-height:46px;cursor:pointer}
+  button:active{background:#1A2230}
+  button:disabled{opacity:.35}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#171204}
+  button.danger{border-color:var(--err);color:var(--err)}
+  button.small{min-height:40px;padding:8px;font-size:13px;font-weight:500}
+
+  label.opt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);
+    padding:6px 2px;user-select:none}
+  input[type=checkbox]{width:18px;height:18px;accent-color:var(--amber)}
+
+  /* ── mapa 16×16 ── */
+  #gridWrap{position:relative}
+  #grid{display:grid;grid-template-columns:repeat(16,1fr);gap:2px}
+  #grid div{aspect-ratio:1;border-radius:2px;background:#161D28;font-size:0}
+  #grid div.polled{background:#22303F}
+  #grid div.resp{background:var(--ok)}
+  #grid div.known{outline:1px solid var(--amber)}
+  #grid div.cur{outline:2px solid var(--tx)}
+  .legend{display:flex;gap:12px;font-size:11px;color:var(--faint);margin-top:6px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  #sweepInfo{font-family:var(--mono);font-size:12px;color:var(--dim);margin-top:6px}
+  #responders{font-family:var(--mono);font-size:12px;color:var(--ok);margin-top:4px;word-break:break-all}
+
+  /* ── markery ── */
+  #marks{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  #marks button{background:#1A1607;border-color:#3D3010;color:var(--mark);font-weight:600}
+  #marks button:active{background:#2A2510}
+
+  /* ── log ── */
+  #log{font-family:var(--mono);font-size:11px;line-height:1.5;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:8px;height:230px;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;white-space:pre-wrap;word-break:break-all}
+  #log .tx{color:var(--tx)} #log .rx{color:var(--ok)} #log .ev{color:var(--dim)}
+  #log .mk{color:var(--mark);font-weight:700} #log .er{color:var(--err)}
+  #logCtl{display:flex;gap:8px;margin-top:8px}
+
+  #exportBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);
+    color:#10151C;font-weight:700;font-size:14px;padding:10px 18px;border-radius:20px;
+    opacity:0;pointer-events:none;transition:opacity .2s;z-index:9}
+  #toast.show{opacity:1}
+  textarea#dump{width:100%;height:140px;background:var(--panel2);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;font-family:var(--mono);font-size:11px;
+    padding:8px;display:none;margin-top:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Fiido <small>Skaner</small></h1>
+  <div id="counters">RX <b id="cRx">0</b> · TX <b id="cTx">0</b><br>log <b id="cKb">0</b> kB</div>
+</header>
+
+<div class="card">
+  <div id="statusRow"><span id="dot"></span><span id="statusTxt">Rozłączony</span></div>
+  <div class="row" style="margin-top:10px">
+    <button id="btnConnect" class="primary">Połącz (Fiido_*)</button>
+    <button id="btnConnectAll">Skanuj wszystko</button>
+    <button id="btnDisconnect" class="danger" disabled>Rozłącz</button>
+  </div>
+  <label class="opt"><input type="checkbox" id="optHandshake" checked>
+    Auto-handshake po okresie ciszy (3 s nasłuchu)</label>
+</div>
+
+<div class="card">
+  <h2>Odpytywanie</h2>
+  <div class="row">
+    <button id="btnKnown" disabled>Znane rejestry</button>
+    <button id="btnHandshake" class="small" disabled>Handshake</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="btnMonExt" disabled>Monitor EXT</button>
+    <button id="btnDeep" disabled>Głęboki odczyt (len 249)</button>
+    <button id="btnSweep1" disabled>Sweep len 1</button>
+    <button id="btnSweep2" disabled>Sweep len 2</button>
+    <button id="btnSweep53" disabled>Sweep len 53</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="btnPause" class="small" disabled>Pauza</button>
+    <button id="btnStop" class="small danger" disabled>Stop</button>
+  </div>
+  <div id="gridWrap" style="margin-top:10px">
+    <div id="grid"></div>
+    <div class="legend">
+      <span><i style="background:#22303F"></i>odpytany</span>
+      <span><i style="background:var(--ok)"></i>odpowiedział</span>
+      <span><i style="background:#161D28;outline:1px solid var(--amber)"></i>znany rejestr</span>
+    </div>
+    <div id="sweepInfo">Sweep nieaktywny</div>
+    <div id="responders"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Markery zdarzeń</h2>
+  <div id="marks">
+    <button data-m="ZASILANIE ON">Zasilanie ON</button>
+    <button data-m="ZASILANIE OFF">Zasilanie OFF</button>
+    <button data-m="SWIATLO ON">Światło ON</button>
+    <button data-m="SWIATLO OFF">Światło OFF</button>
+    <button data-m="BIEG MINUS">Bieg −</button>
+    <button data-m="BIEG PLUS">Bieg +</button>
+    <button data-m="KLAKSON">Klakson</button>
+    <button data-m="HAMULEC">Hamulec</button>
+    <button data-m="START JAZDY">Start jazdy</button>
+    <button data-m="STOP JAZDY">Stop jazdy</button>
+    <button data-m="LADOWARKA ON">Ładowarka podł.</button>
+    <button data-m="LADOWARKA OFF">Ładowarka odł.</button>
+    <button data-m="APKA FIIDO ZRZUT" style="grid-column:1/-1">Apka Fiido — zrzut wartości (zrób screenshot)</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Log · <span id="sessInfo" style="text-transform:none;letter-spacing:0"></span></h2>
+  <div id="log"></div>
+  <div id="logCtl">
+    <button id="btnClear" class="small danger">Nowa sesja</button>
+    <button id="btnPrev" class="small" style="display:none">Wczytaj poprzednią</button>
+  </div>
+  <h2 style="margin-top:12px">Eksport</h2>
+  <div id="exportBtns"></div>
+  <textarea id="dump" readonly></textarea>
+</div>
+
+<div id="toast"></div>
+<script>
+'use strict';
+window.addEventListener('error',e=>{ try{ log('ERR',(e.message||'?')+' @'+(e.lineno||'?'),'er'); }catch(_){alert('JS: '+e.message);} });
+window.addEventListener('unhandledrejection',e=>{ try{ log('ERR','promise: '+(e.reason&&e.reason.message||e.reason),'er'); }catch(_){}});
+/* ════════ PROTOKÓŁ FIIDO (zweryfikowany w dzikus/esphome-fiido-bms) ════════
+   Poll:   46 64 55 [len] [addr] [crc]         (crc = XOR wszystkich wcześniejszych bajtów)
+   Notify: 46 64 AA [len] [addr] [payload...] [crc]
+   Handshake: poll addr=0x0D len=0x0D
+   Usługa 00010203-0405-0607-0809-0A0B0C0DFFE0: FFE1 notify (RX), FFE2 write (TX)
+   Skaner wysyła WYŁĄCZNIE ramki typu poll (0x55) — zero zapisów.            */
+const SVC   = '00010203-0405-0607-0809-0a0b0c0dffe0';   /* C11/M1 */
+const CH_RX = '00010203-0405-0607-0809-0a0b0c0dffe1';
+const CH_TX = '00010203-0405-0607-0809-0a0b0c0dffe2';
+const SVC_AIR = 'c3e6fea0-e966-1000-8000-be99c223df6a';   /* Fiido Air (MIVICE) */
+const DFU_BLOCK = ['fe59','0000fe59'];                    /* Nordic DFU - NIGDY nie dotykać */
+const EXTRA_SVCS = [SVC_AIR, 0xFE59, 'device_information', 'battery_service',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
+const KNOWN = [ [0x7B,13,'BATTERY'],[0xAF,12,'CTRL'],[0x96,12,'MOTOR'],
+  [0xC8,12,'ENERGY'],[0x05,53,'STATS'],[0x60,13,'METER'],[0x3C,1,'SPEEDLIM'] ];
+const KNOWN_ADDRS = new Set(KNOWN.map(k=>k[0]));
+
+const hex = b => Array.from(b, x=>x.toString(16).padStart(2,'0')).join('');
+const h2  = n => n.toString(16).padStart(2,'0').toUpperCase();
+function crc(buf,len){let c=0;for(let i=0;i<len;i++)c^=buf[i];return c;}
+function pollFrame(addr,len){const f=new Uint8Array(6);
+  f[0]=0x46;f[1]=0x64;f[2]=0x55;f[3]=len;f[4]=addr;f[5]=crc(f,5);return f;}
+
+/* ════════ LOG + TRWAŁY ZAPIS (localStorage, przyrostowo, w segmentach) ════ */
+const LS_META='fs_meta', LS_CHUNK='fs_log_', CHUNK_MAX=110*1024;
+let t0=Date.now(), lines=[], pendFlush=[], chunkIdx=0, chunkSize=0, totalBytes=0;
+let rxCount=0, txCount=0;
+const $=id=>document.getElementById(id);
+const logEl=$('log');
+
+function ts(){return ((Date.now()-t0)/1000).toFixed(3);}
+function log(kind,text,cls){
+  const line=ts()+'|'+kind+'|'+text;
+  lines.push(line); pendFlush.push(line); totalBytes+=line.length+1;
+  const d=document.createElement('div');
+  d.className=cls||''; d.textContent=line;
+  logEl.appendChild(d);
+  while(logEl.childElementCount>250) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+  $('cKb').textContent=(totalBytes/1024).toFixed(0);
+  if(pendFlush.length>=40) flush();
+}
+function flush(){
+  if(!pendFlush.length)return;
+  try{
+    let cur=localStorage.getItem(LS_CHUNK+chunkIdx)||'';
+    cur+=pendFlush.join('\n')+'\n'; pendFlush=[];
+    localStorage.setItem(LS_CHUNK+chunkIdx,cur);
+    chunkSize=cur.length;
+    if(chunkSize>CHUNK_MAX){chunkIdx++;chunkSize=0;}
+    localStorage.setItem(LS_META,JSON.stringify({t0,chunks:chunkIdx+1,saved:Date.now()}));
+  }catch(e){ $('statusTxt').textContent='UWAGA: localStorage pełny — eksportuj log!'; }
+}
+setInterval(flush,2000);
+window.addEventListener('pagehide',flush);
+
+function fullLog(){
+  flush(); let out='';
+  for(let i=0;i<=chunkIdx;i++) out+=localStorage.getItem(LS_CHUNK+i)||'';
+  return out;
+}
+function newSession(keepNote){
+  flush();
+  const meta=localStorage.getItem(LS_META);
+  if(meta){ /* zachowaj poprzednią sesję pod kluczem prev_ */
+    try{
+      let prev=''; const m=JSON.parse(meta);
+      for(let i=0;i<m.chunks;i++){prev+=localStorage.getItem(LS_CHUNK+i)||'';
+        localStorage.removeItem(LS_CHUNK+i);}
+      localStorage.setItem('fs_prev',prev.slice(-2*1024*1024));
+    }catch(e){}
+  }
+  t0=Date.now(); lines=[]; pendFlush=[]; chunkIdx=0; chunkSize=0; totalBytes=0;
+  rxCount=0; txCount=0; $('cRx').textContent='0'; $('cTx').textContent='0';
+  logEl.innerHTML=''; respMap.clear(); renderResponders(); buildGrid();
+  localStorage.setItem(LS_META,JSON.stringify({t0,chunks:1,saved:Date.now()}));
+  log('EV','# FIIDO-SCAN v1 | '+new Date().toISOString()+(keepNote?' | '+keepNote:''),'ev');
+  $('sessInfo').textContent='start '+new Date().toLocaleTimeString();
+  updatePrevBtn();
+}
+function updatePrevBtn(){
+  $('btnPrev').style.display = localStorage.getItem('fs_prev') ? '' : 'none';
+}
+
+/* ════════ BLE ════════ */
+let dev=null, chTx=null, chRx=null, rxBuf=new Uint8Array(0), quietTimer=null;
+
+function setStatus(txt,cls){ $('statusTxt').textContent=txt;
+  $('dot').className=cls||''; }
+function setConnUI(on){
+  ['btnKnown','btnHandshake','btnSweep1','btnSweep2','btnSweep53','btnMonExt','btnDeep'].forEach(i=>$(i).disabled=!on);
+  $('btnDisconnect').disabled=!on;
+  $('btnConnect').disabled=on; $('btnConnectAll').disabled=on;
+}
+
+async function connect(all){
+  toast('Otwieram wybór urządzenia…');
+  try{
+    setStatus('Wybór urządzenia…','busy');
+    log('EV','requestDevice start (all='+!!all+')','ev');
+    const mk = svcs => all
+      ? {acceptAllDevices:true, optionalServices:svcs}
+      : {filters:[{namePrefix:'Fiido'}], optionalServices:svcs};
+    try{
+      dev = await navigator.bluetooth.requestDevice(mk([SVC].concat(EXTRA_SVCS)));
+    }catch(e1){
+      if(e1.name==='NotFoundError'||e1.name==='AbortError') throw e1; /* user anulował / brak urządzeń */
+      log('EV','requestDevice z rozszerzonymi usługami odrzucony ('+e1.name+': '+e1.message+') — ponawiam minimalnie','er');
+      dev = await navigator.bluetooth.requestDevice(mk([SVC]));
+    }
+    dev.addEventListener('gattserverdisconnected',()=>{
+      log('EV','DISCONNECT gattserverdisconnected','er');
+      setStatus('Rozłączony ('+(dev&&dev.name||'?')+')',''); setConnUI(false); stopSweep(true); if(monExt)toggleMonExt();
+    });
+    log('EV','CONNECTING '+dev.name+' id='+dev.id,'ev');
+    setStatus('Łączenie z '+dev.name+'…','busy');
+    const gatt = await dev.gatt.connect();
+    log('EV','CONNECTED','ev');
+    setStatus('Połączony: '+dev.name,'on'); setConnUI(true);
+
+    /* ── ZWIAD + AUTODETEKCJA KANAŁU ── */
+    const found=[];   /* {svcUuid, rx, tx} kandydaci */
+    try{
+      const svcs = await gatt.getPrimaryServices();
+      for(const s of svcs){
+        const isDfu = DFU_BLOCK.some(d=>s.uuid.toLowerCase().indexOf(d)===0);
+        log('EV','SVC '+s.uuid+(isDfu?' [DFU - pomijam]':''),'ev');
+        let rxC=null, txC=null;
+        try{
+          const chs = await s.getCharacteristics();
+          for(const c of chs){
+            const p=c.properties, pr=[];
+            for(const k of ['read','write','writeWithoutResponse','notify','indicate'])
+              if(p[k]) pr.push(k);
+            log('EV','  CHR '+c.uuid+' ['+pr.join(',')+']','ev');
+            if(!isDfu){
+              if(p.notify) rxC=c;
+              if(p.write||p.writeWithoutResponse) txC=txC||c;
+            }
+          }
+        }catch(e){ log('EV','  CHR err: '+e.message,'er'); }
+        if(rxC&&txC) found.push({svcUuid:s.uuid, rx:rxC, tx:txC});
+      }
+    }catch(e){ log('EV','SVC enum err: '+e.message,'er'); }
+
+    /* preferencja: znana usługa C11 (FFE0) → znana usługa Air → pierwszy kandydat */
+    let pick = found.find(f=>f.svcUuid===SVC) || found.find(f=>f.svcUuid===SVC_AIR) || found[0];
+    if(!pick) throw new Error('nie znaleziono pary notify+write poza DFU');
+    chRx = pick.rx; chTx = pick.tx;
+    log('EV','LINK svc='+pick.svcUuid,'ev');
+    log('EV','LINK rx='+chRx.uuid+' tx='+chTx.uuid,'ev');
+    await chRx.startNotifications();
+    chRx.addEventListener('characteristicvaluechanged', onNotify);
+    log('EV','NOTIFY-ON; okres ciszy 3 s (pasywny nasłuch)','ev');
+    setStatus('Nasłuch: '+dev.name,'on');
+
+    clearTimeout(quietTimer);
+    quietTimer=setTimeout(()=>{
+      log('EV','QUIET-END po 3 s, link stabilny','ev');
+      if($('optHandshake').checked) sendHandshake();
+    },3000);
+  }catch(e){
+    log('EV','CONNECT err: '+e.message,'er');
+    setStatus('Błąd: '+e.message,''); setConnUI(false);
+  }
+}
+
+function onNotify(ev){
+  const dv=ev.target.value;
+  const v=new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  rxCount++; $('cRx').textContent=rxCount;
+  log('RXC', v.length+'|'+hex(v),'rx');          /* surowa porcja - zawsze */
+  const nb=new Uint8Array(rxBuf.length+v.length);
+  nb.set(rxBuf); nb.set(v,rxBuf.length); rxBuf=nb;
+  extractFrames();
+}
+function extractFrames(){
+  for(;;){
+    /* znajdź sygnaturę 46 64 */
+    let i=0;
+    while(i+1<rxBuf.length && !(rxBuf[i]===0x46&&rxBuf[i+1]===0x64)) i++;
+    if(i>0) rxBuf=rxBuf.slice(i);                 /* smieci juz zalogowane jako RXC */
+    if(rxBuf.length<6){ if(rxBuf.length>512) rxBuf=new Uint8Array(0); return; }
+    const dlen=rxBuf[3], total=6+dlen;
+    if(rxBuf.length<total) return;               /* czekamy na resztę */
+    const f=rxBuf.slice(0,total); rxBuf=rxBuf.slice(total);
+    const ok = f[5+dlen]===crc(f,5+dlen);
+    const addr=f[4], type=f[2];
+    log('RX', h2(addr)+'|'+dlen+'|'+(ok?'ok':'CRC!')+'|'+hex(f),'rx');
+    if(type===0xAA && ok) markResponder(addr,dlen,f);
+  }
+}
+
+let sendQueue=Promise.resolve();
+function sendFrame(f,tag){
+  sendQueue=sendQueue.then(async()=>{
+    if(!chTx) return;
+    try{
+      if(chTx.properties.writeWithoutResponse && chTx.writeValueWithoutResponse)
+        await chTx.writeValueWithoutResponse(f);
+      else await chTx.writeValue(f);
+      txCount++; $('cTx').textContent=txCount;
+      log('TX',(tag||'')+'|'+hex(f),'tx');
+    }catch(e){ log('TX','err '+(tag||'')+': '+e.message,'er'); }
+  });
+  return sendQueue;
+}
+function sendHandshake(){ sendFrame(pollFrame(0x0D,0x0D),'HS'); }
+async function pollKnown(){
+  for(const [a,l,n] of KNOWN){ await sendFrame(pollFrame(a,l),n); await wait(250); }
+}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ════════ SWEEP + MAPA ════════ */
+const respMap=new Map(); let sweep=null;
+function buildGrid(){
+  const g=$('grid'); g.innerHTML='';
+  for(let a=0;a<256;a++){
+    const c=document.createElement('div'); c.id='g'+a;
+    if(KNOWN_ADDRS.has(a)) c.classList.add('known');
+    c.title='0x'+h2(a); g.appendChild(c);
+  }
+}
+function markResponder(addr,len,frame){
+  const prev=respMap.get(addr);
+  respMap.set(addr,{len,count:(prev?prev.count+1:1),hex:hex(frame)});
+  const c=$('g'+addr); if(c) c.classList.add('resp');
+  if(sweep && sweep.waiting===addr) sweep.gotReply=true;
+  renderResponders();
+}
+function renderResponders(){
+  const a=[...respMap.keys()].sort((x,y)=>x-y)
+    .map(k=>'0x'+h2(k)+':'+respMap.get(k).len);
+  $('responders').textContent = a.length? 'Respondery: '+a.join(' ') : '';
+}
+async function runSweep(len){
+  if(sweep) return;
+  sweep={addr:0,len,paused:false,stop:false,waiting:-1,gotReply:false};
+  $('btnPause').disabled=false; $('btnStop').disabled=false;
+  $('btnSweep1').disabled=true; $('btnSweep2').disabled=true; $('btnSweep53').disabled=true;
+  log('MK','SWEEP-START len='+len,'mk');
+  for(let a=0;a<256;a++){
+    if(sweep.stop) break;
+    while(sweep.paused && !sweep.stop) await wait(150);
+    if(!chTx){ log('EV','SWEEP przerwany — brak połączenia','er'); break; }
+    sweep.addr=a; sweep.waiting=a; sweep.gotReply=false;
+    const prev=$('g'+(a-1)); if(prev) prev.classList.remove('cur');
+    const cell=$('g'+a); if(cell){cell.classList.add('polled','cur');}
+    $('sweepInfo').textContent='Sweep 0x'+h2(a)+' ('+(a+1)+'/256), len='+len;
+    await sendFrame(pollFrame(a,len),'SW');
+    /* czekaj na odpowiedź max 300 ms */
+    const t=Date.now();
+    while(!sweep.gotReply && Date.now()-t<300) await wait(20);
+    if(!sweep.gotReply) log('NR','0x'+h2(a)+'|timeout300','er');
+    await wait(80);
+  }
+  const last=$('g'+sweep.addr); if(last) last.classList.remove('cur');
+  log('MK','SWEEP-END len='+len+' respondery='+respMap.size,'mk');
+  $('sweepInfo').textContent='Sweep zakończony — odpowiedziało '+respMap.size+' adresów';
+  sweep=null;
+  $('btnPause').disabled=true; $('btnStop').disabled=true; $('btnPause').textContent='Pauza';
+  if(chTx){ $('btnSweep1').disabled=false; $('btnSweep2').disabled=false; $('btnSweep53').disabled=false; }
+}
+let monExt=false, monTimer=null;
+function monTick(alt){
+  if(!monExt||!chTx) return;
+  sendFrame(pollFrame(alt?0xE0:0xFF,53),'EXT');
+  monTimer=setTimeout(()=>monTick(!alt),600);
+}
+function toggleMonExt(){
+  monExt=!monExt;
+  $('btnMonExt').textContent=monExt?'Monitor EXT: STOP':'Monitor EXT';
+  log('MK',monExt?'MONEXT-START':'MONEXT-STOP','mk');
+  if(monExt) monTick(true); else clearTimeout(monTimer);
+}
+function stopSweep(silent){ if(sweep){ sweep.stop=true; if(!silent)log('MK','SWEEP-STOP','mk'); } }
+
+/* ════════ EKSPORT ════════ */
+const PART=150*1024;
+function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('show');
+  setTimeout(()=>e.classList.remove('show'),1800); }
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }
+  catch(e){
+    const ta=$('dump'); ta.style.display='block'; ta.value=t; ta.focus(); ta.select();
+    try{ if(document.execCommand('copy')) return true; }catch(_){}
+    return false;
+  }
+}
+function renderExport(){
+  const box=$('exportBtns'); box.innerHTML='';
+  const data=fullLog(), n=Math.max(1,Math.ceil(data.length/PART));
+  const mk=(label,fn)=>{const b=document.createElement('button');
+    b.className='small';b.textContent=label;b.onclick=fn;box.appendChild(b);};
+  if(n===1) mk('Kopiuj log ('+(data.length/1024).toFixed(0)+' kB)',
+    async()=>toast(await copyText(fullLog())?'Skopiowano':'Zaznacz i skopiuj ręcznie'));
+  else for(let i=0;i<n;i++) mk('Kopiuj cz. '+(i+1)+'/'+n,
+    async()=>{const d=fullLog();
+      toast(await copyText(d.slice(i*PART,(i+1)*PART))?'Cz. '+(i+1)+' skopiowana':'Zaznacz ręcznie');});
+  mk('Pokaż tekst',()=>{const ta=$('dump');
+    ta.style.display=ta.style.display==='block'?'none':'block'; ta.value=fullLog();});
+  if(navigator.share) mk('Udostępnij…',async()=>{
+    const d=fullLog();
+    try{
+      const file=new File([d],'fiido-scan.txt',{type:'text/plain'});
+      if(navigator.canShare&&navigator.canShare({files:[file]}))
+        await navigator.share({files:[file],title:'Fiido scan'});
+      else await navigator.share({title:'Fiido scan',text:d.slice(0,50000)});
+    }catch(e){ if(e.name!=='AbortError') toast('Share niedostępny'); }
+  });
+}
+setInterval(renderExport,5000);
+
+/* ════════ ZDARZENIA UI ════════ */
+$('btnConnect').onclick=()=>connect(false);
+$('btnConnectAll').onclick=()=>connect(true);
+$('btnDisconnect').onclick=()=>{ stopSweep(); if(dev&&dev.gatt.connected)dev.gatt.disconnect(); };
+$('btnHandshake').onclick=sendHandshake;
+$('btnKnown').onclick=pollKnown;
+$('btnMonExt').onclick=toggleMonExt;
+$('btnDeep').onclick=async()=>{
+  log('MK','DEEP-START pomiar max okna @0xFF','mk');
+  const lens=[200,150,120,100,90,80,70,64,60,59,58,57,56,55,54];
+  let best=0;
+  for(const l of lens){
+    const before=rxCount;
+    await sendFrame(pollFrame(0xFF,l),'DEEP'+l);
+    const t=Date.now();
+    while(rxCount===before && Date.now()-t<400) await wait(20);
+    if(rxCount>before){ best=l; log('MK','DEEP max okno = '+l,'mk'); break; }
+    else log('NR','0xFF len'+l+'|timeout','er');
+    await wait(120);
+  }
+  if(best) { log('MK','DEEP odczyt koncowy 0xFF len '+best,'mk'); }
+  else log('MK','DEEP-END: zadna dlugosc >53 nie odpowiedziala','mk');
+};
+$('btnSweep1').onclick=()=>runSweep(1);
+$('btnSweep2').onclick=()=>runSweep(2);
+$('btnSweep53').onclick=()=>runSweep(53);
+$('btnPause').onclick=()=>{ if(!sweep)return; sweep.paused=!sweep.paused;
+  $('btnPause').textContent=sweep.paused?'Wznów':'Pauza';
+  log('MK',sweep.paused?'SWEEP-PAUZA':'SWEEP-WZNOWIONY','mk'); };
+$('btnStop').onclick=()=>stopSweep();
+document.querySelectorAll('#marks button').forEach(b=>
+  b.onclick=()=>{ log('MK',b.dataset.m,'mk'); toast('Marker: '+b.dataset.m); });
+$('btnClear').onclick=()=>{ if(confirm('Rozpocząć nową sesję? Obecny log trafi do "poprzedniej".'))
+  newSession(); };
+$('btnPrev').onclick=async()=>{
+  const p=localStorage.getItem('fs_prev'); if(!p)return;
+  toast(await copyText(p)?'Poprzednia sesja skopiowana':'Zaznacz ręcznie');
+  const ta=$('dump'); ta.style.display='block'; ta.value=p;
+};
+
+/* ════════ START ════════ */
+buildGrid();
+(function(){
+  const ua=navigator.userAgent;
+  const bt=!!navigator.bluetooth;
+  setTimeout(()=>{
+    log('EV','ENV bt='+bt+' | '+ua.slice(0,90),'ev');
+    if(bt&&navigator.bluetooth.getAvailability)
+      navigator.bluetooth.getAvailability().then(a=>log('EV','ENV getAvailability='+a,'ev'))
+        .catch(e=>log('EV','ENV getAvailability err '+e.message,'er'));
+  },50);
+})();
+if(!navigator.bluetooth){
+  setStatus('WEB BLUETOOTH NIEDOSTĘPNY — ta karta nie działa w Safari/Chrome iOS, otwórz stronę w aplikacji Bluefy',''); 
+  $('btnConnect').disabled=true; $('btnConnectAll').disabled=true;
+}
+const meta=localStorage.getItem(LS_META);
+if(meta){ /* jest niedokończona sesja z poprzedniego uruchomienia */
+  try{
+    const m=JSON.parse(meta);
+    let prev=''; for(let i=0;i<m.chunks;i++) prev+=localStorage.getItem(LS_CHUNK+i)||'';
+    if(prev.length>50){
+      localStorage.setItem('fs_prev',prev.slice(-2*1024*1024));
+    }
+    for(let i=0;i<m.chunks;i++) localStorage.removeItem(LS_CHUNK+i);
+  }catch(e){}
+}
+newSession();
+updatePrevBtn();
+renderExport();
+</script>
+</body>
+</html>
