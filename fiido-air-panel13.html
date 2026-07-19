@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07090D">
+<title>Fiido Air</title>
+<style>
+  :root{
+    --bg:#07090D; --panel:#10141B; --line:#1D2532;
+    --ink:#F2F6FA; --dim:#7E8A99; --faint:#48535F;
+    --teal:#2BD9C8; --green:#3DDC84; --amber:#FFB454; --red:#FF5D5D;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+  html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,system-ui,sans-serif;
+    overscroll-behavior:none;height:100%}
+  body{max-width:520px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;
+    padding:calc(8px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom));gap:10px;
+    overflow:hidden}
+
+  /* ── pasek górny: status · zegar · bateria · połącz ── */
+  #top{display:flex;align-items:center;gap:12px}
+  #dot{width:10px;height:10px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red);flex:none}
+  #dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+  #dot.busy{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  #clock{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  #battMini{display:flex;align-items:center;gap:6px;margin-left:auto}
+  #battBars{display:flex;gap:2px}
+  #battBars i{width:7px;height:14px;border-radius:2px;background:#1A2230;transform:skewX(-8deg)}
+  #battBars i.on{background:var(--green)}
+  #battBars i.low{background:var(--red)}
+  #battPct{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--dim);min-width:38px;text-align:right}
+  #connBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;
+    width:42px;height:38px;font-size:17px;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center}
+
+  /* ── prędkość: elastyczny wypełniacz ── */
+  #speedZone{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 130% at 50% 0%,#121924 0%,var(--bg) 75%);
+    border:1px solid var(--line);border-radius:22px}
+  #speedWrap{text-align:center;line-height:.9}
+  #speed{font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.035em;
+    font-size:clamp(96px,min(41vw,30dvh),190px)}
+  #speedUnit{font-size:15px;font-weight:600;color:var(--dim);letter-spacing:.14em;margin-top:6px}
+  #modeTag{position:absolute;top:12px;left:14px;font-size:13px;font-weight:800;
+    letter-spacing:.12em;color:var(--teal)}
+  #liteTag{position:absolute;top:12px;right:14px;font-size:15px;color:var(--amber);display:none}
+
+  /* ── statystyki: jedna zwarta linia ── */
+  #trip{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:8px 6px;text-align:center}
+  .stat b{display:block;font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat b small{font-size:.55em;color:var(--dim);font-weight:600}
+  .stat span{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+
+  /* ── sterowanie: jeden rząd w zasięgu kciuka ── */
+  #ctl{display:grid;grid-template-columns:52px 52px 1fr;gap:8px}
+  .tgl{border:1px solid var(--line);background:var(--panel);color:var(--dim);border-radius:14px;
+    height:52px;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .tgl.on{color:#0B1210;background:linear-gradient(180deg,var(--green),#22B368);border-color:transparent}
+  #lightBtn.on{background:linear-gradient(180deg,var(--amber),#E09A3A);color:#1A1204}
+  .tgl:disabled{opacity:.35}
+  #modeSeg{display:grid;grid-template-columns:1fr 1fr 1fr;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;height:52px}
+  #modeSeg button{border:none;background:none;color:var(--dim);font-size:13px;font-weight:800;
+    letter-spacing:.06em;cursor:pointer}
+  #modeSeg button+button{border-left:1px solid var(--line)}
+  #modeSeg button.on{background:#12303C;color:var(--teal)}
+  #modeSeg button:disabled{opacity:.35}
+
+  /* ── komunikaty: tylko gdy są ── */
+  #msg{display:none;font-size:11px;line-height:1.4;color:var(--amber);text-align:center}
+  #msg.show{display:block}
+  #msg u{cursor:pointer}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <span id="dot"></span>
+  <span id="clock">--:--</span>
+  <div id="battMini">
+    <div id="battBars"><i></i><i></i><i></i><i></i><i></i></div>
+    <span id="battPct">--%</span>
+  </div>
+  <button id="connBtn" title="Połącz">&#8942;</button>
+</div>
+
+<div id="speedZone">
+  <div id="modeTag"></div>
+  <div id="liteTag">&#9788;</div>
+  <div id="speedWrap">
+    <div id="speed">0.0</div>
+    <div id="speedUnit">KM/H</div>
+  </div>
+</div>
+
+<div id="trip">
+  <div class="stat"><b id="tripDist">0.00<small> km</small></b><span>Dystans</span></div>
+  <div class="stat"><b id="tripMax">0.0<small> km/h</small></b><span>V maks</span></div>
+  <div class="stat"><b id="tripTime">0:00</b><span>Czas</span></div>
+</div>
+
+<div id="ctl">
+  <button class="tgl" id="powerBtn" disabled>&#9211;</button>
+  <button class="tgl" id="lightBtn" disabled>&#9788;</button>
+  <div id="modeSeg">
+    <button data-m="0" disabled>ECO</button>
+    <button data-m="1" disabled>NORMAL</button>
+    <button data-m="2" disabled>SPORT</button>
+  </div>
+</div>
+
+<div id="msg"></div>
+
+<script>
+'use strict';
+window.addEventListener('error',e=>{try{msg('Błąd JS: '+e.message);}catch(_){}});
+
+/* ═══ PROTOKÓŁ FIIDO AIR — zweryfikowany na rowerze 07.2026 ═══
+   Usługa MIVICE C3E6FEA0: FEA1 write, FEA2 notify (FE59 = DFU, nie dotykać).
+   Odczyt:  46 64 55 [len<=53] [addr] [XOR] | Zapis: 46 64 AA [len] [addr] [dane] [XOR]
+   0x22-23 u16be predkosc x0.1 | 0x24 SOC 90/70/50/30/10 | 0x26 tryb 0/1/2 (zapis)
+   0x27 flagi: bit7 zasilanie, bit3 swiatlo (RMW; swiatlo/tryb tylko przy bit7=1)
+   EXT @0xFF payload[50] u16le okres obrotu [ms], 4000=postoj. Ladowarka = BLE OFF. */
+const SVC='c3e6fea0-e966-1000-8000-be99c223df6a';
+const TXU='c3e6fea1-e966-1000-8000-be99c223df6a';
+const RXU='c3e6fea2-e966-1000-8000-be99c223df6a';
+const CIRC=2290;
+
+const $=id=>document.getElementById(id);
+function crc(b,l){let c=0;for(let i=0;i<l;i++)c^=b[i];return c;}
+const pollF=(a,l)=>{const f=new Uint8Array(6);f[0]=0x46;f[1]=0x64;f[2]=0x55;f[3]=l;f[4]=a;f[5]=crc(f,5);return f;};
+const writeF=(a,by)=>{const p=Uint8Array.from(by);const f=new Uint8Array(6+p.length);
+  f[0]=0x46;f[1]=0x64;f[2]=0xAA;f[3]=p.length;f[4]=a;f.set(p,5);f[5+p.length]=crc(f,5+p.length);return f;};
+
+let dev=null,chTx=null,rxBuf=new Uint8Array(0),wantConnect=false;
+let pollTimer=null,reconTimer=null,phase=0;
+let speed=0,soc=null,mode=null,flags=null,rot=4000,freshAt=0;
+let trip={d:0,max:0,ms:0,t:0};
+
+function msg(t){const e=$('msg');
+  if(!t){e.className='';e.innerHTML='';return;}
+  e.innerHTML=t;e.className='show';}
+function setDot(c){$('dot').className=c;}
+
+async function connectFlow(all){
+  if(dev&&dev.gatt.connected){wantConnect=false;dev.gatt.disconnect();return;}
+  wantConnect=true;
+  try{
+    if(!dev){
+      setDot('busy');
+      const opts=all?{acceptAllDevices:true,optionalServices:[SVC]}
+                    :{filters:[{namePrefix:'Fiido'},{services:[SVC]}],optionalServices:[SVC]};
+      try{dev=await navigator.bluetooth.requestDevice(opts);}
+      catch(e1){
+        if(!all&&e1.name!=='NotFoundError'&&e1.name!=='AbortError')
+          dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'Fiido'}],optionalServices:[SVC]});
+        else throw e1;
+      }
+      dev.addEventListener('gattserverdisconnected',onDisc);
+    }
+    await link();
+  }catch(e){
+    setDot('');dev=null;wantConnect=false;
+    msg(e.name==='NotFoundError'
+      ?'Brak roweru: obudź go, odepnij ładowarkę, zamknij apkę Fiido. <u id="mScan">Skanuj wszystko</u>'
+      :'Błąd: '+(e.message||e.name)+' — ładowarka wpięta? Wyłącz/włącz rower.');
+    const u=$('mScan');if(u)u.onclick=()=>connectFlow(true);
+  }
+}
+async function link(){
+  setDot('busy');
+  const g=await dev.gatt.connect();
+  const s=await g.getPrimaryService(SVC);
+  const rx=await s.getCharacteristic(RXU);
+  chTx=await s.getCharacteristic(TXU);
+  await rx.startNotifications();
+  rx.addEventListener('characteristicvaluechanged',onNotify);
+  rxBuf=new Uint8Array(0);phase=0;
+  setDot('on');$('connBtn').innerHTML='&#10005;';$('connBtn').title='Rozłącz';msg('');
+  send(pollF(0x0D,0x0D));
+  clearInterval(pollTimer);pollTimer=setInterval(tick,600);
+}
+function onDisc(){
+  clearInterval(pollTimer);chTx=null;
+  setDot('');$('connBtn').innerHTML='&#8942;';$('connBtn').title='Połącz';
+  render();
+  if(wantConnect){setDot('busy');msg('Łącze przerwane — ponawiam…');
+    clearTimeout(reconTimer);
+    reconTimer=setTimeout(async()=>{try{await link();}catch(e){onDisc();}},2500);
+  }else msg('');
+}
+let q=Promise.resolve();
+function send(f){q=q.then(async()=>{if(!chTx)return;
+  try{if(chTx.properties.writeWithoutResponse&&chTx.writeValueWithoutResponse)
+        await chTx.writeValueWithoutResponse(f);else await chTx.writeValue(f);}catch(_){}});}
+function tick(){
+  send(pollF(0x05,53));
+  if(phase===0)send(pollF(0xFF,53));
+  phase=(phase+1)%3;render();
+}
+
+function onNotify(ev){
+  const dv=ev.target.value;
+  const v=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+  const nb=new Uint8Array(rxBuf.length+v.length);nb.set(rxBuf);nb.set(v,rxBuf.length);rxBuf=nb;
+  for(;;){
+    let i=0;while(i+1<rxBuf.length&&!(rxBuf[i]===0x46&&rxBuf[i+1]===0x64))i++;
+    if(i>0)rxBuf=rxBuf.slice(i);
+    if(rxBuf.length<6){if(rxBuf.length>512)rxBuf=new Uint8Array(0);return;}
+    const dl=rxBuf[3],tot=6+dl;
+    if(rxBuf.length<tot)return;
+    const f=rxBuf.slice(0,tot);rxBuf=rxBuf.slice(tot);
+    if(f[2]!==0xAA||f[5+dl]!==crc(f,5+dl))continue;
+    const addr=f[4],p=f.slice(5,5+dl);
+    if(addr===0x05&&dl===53){
+      speed=((p[0x22-5]<<8)|p[0x23-5])/10;
+      soc=p[0x24-5];mode=p[0x26-5];flags=p[0x27-5];freshAt=Date.now();
+      tripStep();
+    }else if(addr===0xFF&&dl===53){rot=p[50]|(p[51]<<8);}
+  }
+}
+
+function powerToggle(){
+  if(flags==null)return;
+  let b=flags;
+  if(b&0x80){b&=~0x80;b&=~0x08;}else{b|=0x80;}
+  send(writeF(0x27,[b]));flags=b;
+  setTimeout(()=>send(pollF(0x05,53)),250);render();
+}
+function lightToggle(){
+  if(flags==null||!(flags&0x80))return;
+  const b=flags^0x08;
+  send(writeF(0x27,[b]));flags=b;
+  setTimeout(()=>send(pollF(0x05,53)),250);render();
+}
+function setMode(m){
+  if(flags==null||!(flags&0x80))return;
+  send(writeF(0x26,[m]));mode=m;
+  setTimeout(()=>send(pollF(0x05,53)),250);render();
+}
+$('powerBtn').onclick=powerToggle;
+$('lightBtn').onclick=lightToggle;
+document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>setMode(+b.dataset.m));
+$('connBtn').onclick=()=>connectFlow(false);
+
+/* pelny ekran: dwukrotne dotkniecie pola predkosci */
+let lastTap=0;
+$('speedZone').addEventListener('pointerup',()=>{
+  const now=Date.now();
+  if(now-lastTap<350){toggleFs();lastTap=0;}else lastTap=now;
+});
+async function toggleFs(){
+  const el=document.documentElement;
+  try{
+    if(document.fullscreenElement||document.webkitFullscreenElement){
+      await (document.exitFullscreen?document.exitFullscreen():document.webkitExitFullscreen());
+    }else if(el.requestFullscreen){await el.requestFullscreen();}
+    else if(el.webkitRequestFullscreen){el.webkitRequestFullscreen();}
+    else msg('Pełny ekran niedostępny w tej wersji Bluefy — użyj przycisku pełnego ekranu w pasku Bluefy.');
+  }catch(e){msg('Pełny ekran odrzucony: '+(e.message||e.name));}
+}
+let clkHold=null;
+$('tripDist').parentElement.onpointerdown=()=>{clkHold=setTimeout(()=>{
+  trip={d:0,max:0,ms:0,t:0};render();},900);};        /* przytrzymaj Dystans = zeruj sesje */
+$('tripDist').parentElement.onpointerup=()=>clearTimeout(clkHold);
+$('tripDist').parentElement.onpointercancel=()=>clearTimeout(clkHold);
+
+function tripStep(){
+  const now=Date.now();
+  if(trip.t){const dt=(now-trip.t)/1000;
+    if(dt<5&&speed>0.5){trip.d+=speed/3.6*dt/1000;trip.ms+=dt*1000;}}
+  trip.t=now;
+  if(speed>trip.max)trip.max=speed;
+}
+
+const MODES={0:'ECO',1:'NORMAL',2:'SPORT'};
+function render(){
+  const fresh=Date.now()-freshAt<3000&&chTx;
+  let v=fresh?speed:0;
+  if(fresh&&v===0&&rot>0&&rot<4000)v=CIRC/1000/(rot/1000)*3.6;
+  $('speed').textContent=v.toFixed(1);
+
+  const pwr=fresh&&flags!=null&&(flags&0x80);
+  const lit=fresh&&flags!=null&&(flags&0x08);
+  $('modeTag').textContent=pwr&&mode!=null?(MODES[mode]||('TRYB '+mode)):'';
+  $('liteTag').style.display=lit?'block':'none';
+  $('powerBtn').disabled=!fresh;
+  $('powerBtn').className='tgl'+(pwr?' on':'');
+  $('lightBtn').disabled=!pwr;
+  $('lightBtn').className='tgl'+(lit?' on':'');
+  document.querySelectorAll('#modeSeg button').forEach(b=>{
+    b.disabled=!pwr;b.className=(fresh&&mode===+b.dataset.m)?'on':'';});
+
+  if(fresh&&soc!=null){
+    $('battPct').textContent=soc+'%';
+    const bars=Math.max(0,Math.min(5,Math.round((soc+10)/20)));
+    document.querySelectorAll('#battBars i').forEach((el,i)=>
+      el.className=i<bars?(bars<=1?'low':'on'):'');
+  }else{
+    $('battPct').textContent='--%';
+    document.querySelectorAll('#battBars i').forEach(el=>el.className='');
+  }
+
+  $('tripDist').innerHTML=trip.d.toFixed(2)+'<small> km</small>';
+  $('tripMax').innerHTML=trip.max.toFixed(1)+'<small> km/h</small>';
+  const s=Math.floor(trip.ms/1000);
+  $('tripTime').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+}
+setInterval(()=>{const d=new Date();
+  $('clock').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+},1000);
+render();
+
+if(!navigator.bluetooth){msg('Web Bluetooth niedostępny — otwórz w Bluefy.');$('connBtn').disabled=true;}
+</script>
+</body>
+</html>
