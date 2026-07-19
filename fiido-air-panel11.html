@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#07090D">
+<title>Fiido Air — Licznik</title>
+<style>
+  :root{
+    --bg:#07090D; --panel:#10141B; --line:#1D2532;
+    --ink:#F2F6FA; --dim:#7E8A99; --faint:#48535F;
+    --teal:#2BD9C8; --green:#3DDC84; --amber:#FFB454; --red:#FF5D5D; --blue:#6CB8FF;
+    --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+  html,body{background:var(--bg);color:var(--ink);
+    font-family:-apple-system,system-ui,sans-serif;overscroll-behavior:none}
+  body{max-width:480px;margin:0 auto;padding:12px 14px calc(16px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:12px;min-height:100vh}
+
+  /* ── pasek statusu ── */
+  #top{display:flex;align-items:center;justify-content:space-between}
+  #brand{font-size:13px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  #brand b{color:var(--teal)}
+  #connBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;display:flex;
+    align-items:center;gap:8px;cursor:pointer}
+  #connDot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red)}
+  #connDot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+  #connDot.busy{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+
+  /* ── prędkość ── */
+  #speedCard{background:radial-gradient(120% 140% at 50% 0%,#131A24 0%,var(--panel) 70%);
+    border:1px solid var(--line);border-radius:20px;padding:26px 16px 18px;text-align:center;
+    position:relative;overflow:hidden}
+  #speed{font-size:clamp(88px,30vw,132px);font-weight:800;line-height:.95;
+    font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+  #speed small{font-size:.28em;font-weight:600;color:var(--dim);letter-spacing:.08em;vertical-align:.35em}
+  #speedSrc{font-size:11px;color:var(--faint);margin-top:6px;letter-spacing:.08em;text-transform:uppercase}
+  #modeChip{position:absolute;top:14px;left:14px;border:1px solid var(--line);border-radius:999px;
+    padding:5px 14px;font-size:13px;font-weight:800;letter-spacing:.1em;color:var(--teal);
+    background:#0B1016}
+  #warn{position:absolute;top:14px;right:14px;font-size:11px;color:var(--amber);max-width:45%;text-align:right}
+
+  /* ── bateria ── */
+  #battCard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .cardTitle{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:10px;display:flex;justify-content:space-between}
+  #battRow{display:flex;align-items:center;gap:14px}
+  #battBars{display:flex;gap:5px;flex:1}
+  #battBars i{flex:1;height:34px;border-radius:6px;background:#1A2230;transform:skewX(-8deg)}
+  #battBars i.on{background:linear-gradient(180deg,var(--green),#22B368)}
+  #battBars i.low{background:linear-gradient(180deg,var(--red),#C03A3A)}
+  #battPct{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;min-width:86px;text-align:right}
+  #battPct small{font-size:.5em;color:var(--dim)}
+  #battNote{font-size:11px;color:var(--faint);margin-top:8px}
+
+  /* ── sesja ── */
+  #trip{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 10px;text-align:center}
+  .stat b{display:block;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat b small{font-size:.5em;color:var(--dim);font-weight:600}
+  .stat span{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  #tripCtl{display:flex;justify-content:flex-end}
+  #tripReset{border:none;background:none;color:var(--faint);font-size:12px;padding:6px;cursor:pointer;text-decoration:underline}
+
+  /* ── diagnostyka ── */
+  details{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+  summary{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);cursor:pointer;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  #diag{font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--dim);margin-top:10px;
+    user-select:text}
+  #diag b{color:var(--ink);font-weight:600}
+  #cfg{margin-top:10px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
+  #cfg input{width:70px;background:#0B1016;border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:6px;font-family:var(--mono);font-size:13px;text-align:center}
+
+  #hint{font-size:12px;color:var(--faint);text-align:center;line-height:1.5;padding:0 8px}
+  #hint.err{color:var(--amber)}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div id="brand">Fiido <b>Air</b></div>
+  <button id="connBtn"><span id="connDot"></span><span id="connTxt">Połącz</span></button>
+</div>
+
+<div id="speedCard">
+  <div id="modeChip">—</div>
+  <div id="warn"></div>
+  <div id="speed">0.0<small> km/h</small></div>
+  <div id="speedSrc">licznik gotowy</div>
+</div>
+
+<div id="battCard">
+  <div class="cardTitle"><span>Bateria</span><span id="battAge"></span></div>
+  <div id="battRow">
+    <div id="battBars"><i></i><i></i><i></i><i></i><i></i></div>
+    <div id="battPct">--<small>%</small></div>
+  </div>
+  <div id="battNote">Air raportuje SOC skokowo (5 poziomów): 90 / 70 / 50 / 30 / 10.</div>
+</div>
+
+<div id="trip">
+  <div class="stat"><b id="tripDist">0.00<small> km</small></b><span>Dystans</span></div>
+  <div class="stat"><b id="tripMax">0.0<small> km/h</small></b><span>V maks</span></div>
+  <div class="stat"><b id="tripTime">0:00</b><span>Czas jazdy</span></div>
+</div>
+<div id="tripCtl"><button id="tripReset">wyzeruj sesję</button></div>
+
+<details>
+  <summary>Diagnostyka</summary>
+  <div id="diag">brak danych</div>
+  <div id="cfg">
+    Obwód koła [mm]: <input id="circ" type="number" inputmode="numeric" min="1500" max="2600">
+    <span>(dla prędkości zapasowej z EXT)</span>
+  </div>
+</details>
+
+<div id="hint">Otwórz w Bluefy. Uwaga: podczas ładowania rower wyłącza BLE — panel nie połączy się z wpiętą ładowarką.</div>
+<div style="text-align:center"><button id="connAll" style="border:none;background:none;color:var(--faint);font-size:12px;text-decoration:underline;padding:6px;cursor:pointer">rower niewidoczny? skanuj wszystkie urządzenia</button></div>
+
+<script>
+'use strict';
+window.addEventListener('error',e=>{try{setHint('Błąd JS: '+e.message,true);}catch(_){}});
+
+/* ═══ PROTOKÓŁ FIIDO AIR (zweryfikowany na żywym rowerze, 07.2026) ═══
+   Usługa MIVICE C3E6FEA0: FEA1 write, FEA2 notify. FE59 = Nordic DFU, NIE DOTYKAĆ.
+   Ramka poll: 46 64 55 [len<=53] [addr] [XOR]; notify: 46 64 AA [len] [addr] [payload] [XOR].
+   Pamięć płaska 0x00-0x133 (okna max 53 B). Zweryfikowane rejestry:
+     0x22-0x23 u16be  prędkość ×0.1 km/h
+     0x24      u8     SOC, skokowo 90/70/50/30/10
+     0x26      u8     tryb asysty 0/1/2 (przełącznik na ramie)
+     0x27      u8     flagi (bit7 aktywny po uzbrojeniu napędu)
+     EXT @0xFF+50 u16le okres obrotu koła [ms], 4000 = postój (źródło zapasowe prędkości)
+   Ładowarka wyłącza BLE. Pola napięcia/prądu w tej warstwie martwe na Airze.        */
+const SVC='c3e6fea0-e966-1000-8000-be99c223df6a';
+const CH_TX='c3e6fea1-e966-1000-8000-be99c223df6a';
+const CH_RX='c3e6fea2-e966-1000-8000-be99c223df6a';
+
+const $=id=>document.getElementById(id);
+const hex=b=>Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
+function crc(b,l){let c=0;for(let i=0;i<l;i++)c^=b[i];return c;}
+function poll(addr,len){const f=new Uint8Array(6);
+  f[0]=0x46;f[1]=0x64;f[2]=0x55;f[3]=len;f[4]=addr;f[5]=crc(f,5);return f;}
+const MODES={0:'ECO',1:'NORMAL',2:'SPORT'};
+
+/* ═══ STAN ═══ */
+let dev=null,chTx=null,rxBuf=new Uint8Array(0);
+let wantConnect=false,reconTimer=null,pollTimer=null,pollPhase=0;
+let lastStatsAt=0,lastSpeed=0,rotPeriod=4000,soc=null,mode=null,flags=null,statsHex='';
+let trip={dist:0,max:0,ridingMs:0,lastT:0};
+let circ=parseInt(localStorage.getItem('air_circ')||'2290',10);
+$('circ').value=circ;
+$('circ').onchange=()=>{const v=parseInt($('circ').value,10);
+  if(v>=1500&&v<=2600){circ=v;localStorage.setItem('air_circ',String(v));}};
+
+function setHint(t,err){$('hint').textContent=t;$('hint').className=err?'err':'';}
+function setConn(state,txt){$('connDot').className=state;$('connTxt').textContent=txt;}
+
+/* ═══ BLE ═══ */
+async function connectFlow(all){
+  if(dev&&dev.gatt.connected){ wantConnect=false; dev.gatt.disconnect(); return; }
+  wantConnect=true;
+  try{
+    if(!dev){
+      setConn('busy','Wybór…');
+      const opts=all
+        ? {acceptAllDevices:true,optionalServices:[SVC]}
+        : {filters:[{namePrefix:'Fiido'},{services:[SVC]}],optionalServices:[SVC]};
+      try{ dev=await navigator.bluetooth.requestDevice(opts); }
+      catch(e1){
+        if(!all&&e1.name!=='NotFoundError'&&e1.name!=='AbortError'){
+          /* Bluefy odrzucił opcje — próba z samym filtrem nazwy */
+          dev=await navigator.bluetooth.requestDevice(
+            {filters:[{namePrefix:'Fiido'}],optionalServices:[SVC]});
+        }else throw e1;
+      }
+      dev.addEventListener('gattserverdisconnected',onDisconnect);
+    }
+    await link();
+  }catch(e){
+    setConn('','Połącz'); dev=null; wantConnect=false;
+    setHint(e.name==='NotFoundError'
+      ?'Nie wybrano urządzenia / brak urządzeń na liście. Sprawdź: rower WŁĄCZONY (obudź przyciskiem), ładowarka ODPIĘTA, apka Fiido i zegarek ROZŁĄCZONE. W razie potrzeby wyłącz i włącz rower, potem "skanuj wszystkie urządzenia" poniżej.'
+      :'Błąd połączenia: '+(e.message||e.name)+'. Jeśli ładowarka wpięta — odłącz ją; ew. wyłącz/włącz rower i spróbuj ponownie.',true);
+  }
+}
+$('connBtn').onclick=()=>connectFlow(false);
+$('connAll').onclick=()=>connectFlow(true);
+async function link(){
+  setConn('busy','Łączenie…');
+  const gatt=await dev.gatt.connect();
+  const svc=await gatt.getPrimaryService(SVC);
+  const rx=await svc.getCharacteristic(CH_RX);
+  chTx=await svc.getCharacteristic(CH_TX);
+  await rx.startNotifications();
+  rx.addEventListener('characteristicvaluechanged',onNotify);
+  setConn('on','Rozłącz');
+  setHint('Połączono z '+(dev.name||'rowerem')+'.');
+  rxBuf=new Uint8Array(0); pollPhase=0;
+  sendFrame(poll(0x0D,0x0D));          /* handshake */
+  clearInterval(pollTimer);
+  pollTimer=setInterval(tick,600);
+}
+function onDisconnect(){
+  clearInterval(pollTimer); chTx=null;
+  setConn('','Połącz'); $('speedSrc').textContent='rozłączono';
+  if(wantConnect){
+    setHint('Utracono łącze — próbuję połączyć ponownie… (ładowarka wpięta? standby?)',true);
+    clearTimeout(reconTimer);
+    reconTimer=setTimeout(async()=>{ try{ await link(); }catch(e){ onDisconnect(); } },2500);
+  }else setHint('Rozłączono.');
+}
+let q=Promise.resolve();
+function sendFrame(f){ q=q.then(async()=>{ if(!chTx)return;
+  try{ if(chTx.writeValueWithoutResponse&&chTx.properties.writeWithoutResponse)
+        await chTx.writeValueWithoutResponse(f); else await chTx.writeValue(f);
+  }catch(_){}}); }
+
+function tick(){
+  /* STATS co cykl (0.6 s), EXT co 3. cykl dla okresu obrotu */
+  sendFrame(poll(0x05,53));
+  if(pollPhase===0) sendFrame(poll(0xFF,53));
+  pollPhase=(pollPhase+1)%3;
+  render();
+}
+
+/* ═══ RX + reasembler ═══ */
+function onNotify(ev){
+  const dv=ev.target.value;
+  const v=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+  const nb=new Uint8Array(rxBuf.length+v.length); nb.set(rxBuf); nb.set(v,rxBuf.length); rxBuf=nb;
+  for(;;){
+    let i=0; while(i+1<rxBuf.length&&!(rxBuf[i]===0x46&&rxBuf[i+1]===0x64))i++;
+    if(i>0)rxBuf=rxBuf.slice(i);
+    if(rxBuf.length<6){ if(rxBuf.length>512)rxBuf=new Uint8Array(0); return; }
+    const dlen=rxBuf[3],total=6+dlen;
+    if(rxBuf.length<total)return;
+    const f=rxBuf.slice(0,total); rxBuf=rxBuf.slice(total);
+    if(f[2]!==0xAA||f[5+dlen]!==crc(f,5+dlen))continue;
+    handleFrame(f[4],f.slice(5,5+dlen));
+  }
+}
+function handleFrame(addr,p){
+  if(addr===0x05&&p.length===53){
+    /* payload[i] = pamięć[0x05+i] */
+    lastSpeed=((p[0x22-5]<<8)|p[0x23-5])/10;
+    soc=p[0x24-5]; mode=p[0x26-5]; flags=p[0x27-5];
+    statsHex=hex(p); lastStatsAt=Date.now();
+    updateTrip();
+  }else if(addr===0xFF&&p.length===53){
+    rotPeriod=p[50]|(p[51]<<8);            /* u16le, 4000 = postój */
+  }
+}
+
+/* ═══ TRIP ═══ */
+function updateTrip(){
+  const now=Date.now();
+  if(trip.lastT){
+    const dt=(now-trip.lastT)/1000;
+    if(dt<5&&lastSpeed>0.5){
+      trip.dist+=lastSpeed/3.6*dt/1000;    /* km */
+      trip.ridingMs+=dt*1000;
+    }
+  }
+  trip.lastT=now;
+  if(lastSpeed>trip.max)trip.max=lastSpeed;
+}
+$('tripReset').onclick=()=>{trip={dist:0,max:0,ridingMs:0,lastT:0};render();};
+
+/* ═══ RENDER ═══ */
+function render(){
+  const fresh=Date.now()-lastStatsAt<3000;
+  /* prędkość: STATS albo zapas z okresu obrotu EXT */
+  let v=lastSpeed,src='';
+  if(fresh){ src='0x22 · STATS'; }
+  if(fresh&&v===0&&rotPeriod>0&&rotPeriod<4000){
+    v=circ/1000/(rotPeriod/1000)*3.6; src='zapas: okres obrotu '+rotPeriod+' ms';
+  }
+  if(!fresh){ v=0; src=chTx?'czekam na dane…':'niepołączony'; }
+  $('speed').innerHTML=v.toFixed(1)+'<small> km/h</small>';
+  $('speedSrc').textContent=src;
+
+  $('modeChip').textContent=fresh&&mode!=null?(MODES[mode]||('TRYB '+mode)):'—';
+  $('warn').textContent=(fresh&&flags!=null&&(flags&0x80))?'':'';
+
+  if(fresh&&soc!=null){
+    $('battPct').innerHTML=soc+'<small>%</small>';
+    const bars=Math.max(0,Math.min(5,Math.round((soc+10)/20)));
+    document.querySelectorAll('#battBars i').forEach((el,i)=>{
+      el.className=i<bars?(bars<=1?'low':'on'):'';});
+    $('battAge').textContent='';
+  }else{
+    $('battPct').innerHTML='--<small>%</small>';
+    document.querySelectorAll('#battBars i').forEach(el=>el.className='');
+    $('battAge').textContent=chTx?'czekam':'';
+  }
+
+  $('tripDist').innerHTML=trip.dist.toFixed(2)+'<small> km</small>';
+  $('tripMax').innerHTML=trip.max.toFixed(1)+'<small> km/h</small>';
+  const s=Math.floor(trip.ridingMs/1000);
+  $('tripTime').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+
+  $('diag').innerHTML= lastStatsAt
+    ? 'tryb <b>'+mode+'</b> · SOC <b>'+soc+'</b> · flagi 0x27 <b>0x'+(flags==null?'--':flags.toString(16).padStart(2,'0'))+'</b>'
+      +' · obrót <b>'+(rotPeriod<4000?rotPeriod+' ms':'postój')+'</b><br>'
+      +'STATS: '+statsHex.replace(/(..)/g,'$1 ').trim()
+    : 'brak danych';
+}
+render();
+
+if(!navigator.bluetooth){
+  setHint('Web Bluetooth niedostępny — otwórz tę stronę w aplikacji Bluefy.',true);
+  $('connBtn').disabled=true;
+}
+</script>
+</body>
+</html>
